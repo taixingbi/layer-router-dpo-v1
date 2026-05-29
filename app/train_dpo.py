@@ -6,29 +6,38 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
-_SCRIPT_DIR = Path(__file__).resolve().parent
-if str(_SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPT_DIR))
+from app.env import REPO_ROOT, load_dotenv
+from app.load_jsonl import load_dpo_dataset
 
-from datasets import Dataset  # noqa: E402
-from peft import LoraConfig  # noqa: E402
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig  # noqa: E402
-from trl import DPOConfig, DPOTrainer  # noqa: E402
+_LORA_TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+_DEFAULT_DATA = REPO_ROOT / "data"
 
-from load_jsonl import load_dpo_dataset  # noqa: E402
+
+def _env_path(name: str, default: Path) -> Path:
+    """Resolve a path from env or default."""
+    raw = os.getenv(name)
+    return Path(raw) if raw else default
 
 
 def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+    """Parse CLI flags and env-backed defaults for DPO training."""
     p = argparse.ArgumentParser(
         description="QLoRA DPO train router from layer-orchestrator-v1 dpo-router/output/*.jsonl"
     )
-    p.add_argument("--train-jsonl", type=Path, required=True)
-    p.add_argument("--val-jsonl", type=Path, default=None)
-    p.add_argument("--base-model", default=os.getenv("BASE_MODEL", "Qwen/Qwen2.5-7B-Instruct"))
+    p.add_argument(
+        "--train-jsonl",
+        type=Path,
+        default=_env_path("TRAIN_JSONL", _DEFAULT_DATA / "train.jsonl"),
+    )
+    p.add_argument(
+        "--val-jsonl",
+        type=Path,
+        default=_env_path("VAL_JSONL", _DEFAULT_DATA / "val.jsonl"),
+    )
+    p.add_argument("--base-model", default=os.getenv("BASE_MODEL", "Qwen/Qwen2.5-1.5B-Instruct"))
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--max-length", type=int, default=int(os.getenv("MAX_LENGTH", "2048")))
     p.add_argument("--num-train-epochs", type=float, default=float(os.getenv("NUM_TRAIN_EPOCHS", "2")))
@@ -50,28 +59,23 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def _bnb_config() -> BitsAndBytesConfig:
-    return BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype="bfloat16",
-        bnb_4bit_use_double_quant=True,
-    )
-
-
-def _lora_config(r: int, alpha: int, dropout: float) -> LoraConfig:
-    return LoraConfig(
-        r=r,
-        lora_alpha=alpha,
-        lora_dropout=dropout,
-        bias="none",
-        task_type="CAUSAL_LM",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-    )
-
-
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Run QLoRA DPO training and write adapter + train_meta.json to output_dir."""
+    from app.pipeline import prepare_training
+
+    load_dotenv()
     args = _parse_args(argv)
+    prepare_training(args)
+    return run(args)
+
+
+def run(args: argparse.Namespace) -> int:
+    """Run QLoRA DPO training (dataset paths must already be resolved)."""
+    from datasets import Dataset
+    from peft import LoraConfig, prepare_model_for_kbit_training
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from trl import DPOConfig, DPOTrainer
+
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
@@ -92,15 +96,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     model_kwargs: dict = {"trust_remote_code": True, "device_map": "auto"}
     if not args.no_quant:
-        model_kwargs["quantization_config"] = _bnb_config()
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype="bfloat16",
+            bnb_4bit_use_double_quant=True,
+        )
 
     model = AutoModelForCausalLM.from_pretrained(args.base_model, **model_kwargs)
     if not args.no_quant:
-        from peft import prepare_model_for_kbit_training
-
         model = prepare_model_for_kbit_training(model)
 
-    peft_config = _lora_config(args.lora_r, args.lora_alpha, args.lora_dropout)
+    peft_config = LoraConfig(
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+        bias="none",
+        task_type="CAUSAL_LM",
+        target_modules=_LORA_TARGETS,
+    )
 
     training_args = DPOConfig(
         output_dir=str(args.output_dir),
@@ -111,7 +125,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         learning_rate=args.learning_rate,
         beta=args.beta,
         max_length=args.max_length,
-        max_prompt_length=min(args.max_length, 1536),
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
         save_total_limit=2,
@@ -130,13 +143,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         peft_config=peft_config,
     )
 
     trainer.train()
-    trainer.save_model(str(args.output_dir / "adapter"))
-    tokenizer.save_pretrained(args.output_dir / "adapter")
+    adapter_dir = args.output_dir / "adapter"
+    trainer.save_model(str(adapter_dir))
+    tokenizer.save_pretrained(adapter_dir)
 
     meta = {
         "base_model": args.base_model,
@@ -151,7 +165,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "quantized": not args.no_quant,
     }
     (args.output_dir / "train_meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
-    print(f"saved adapter -> {args.output_dir / 'adapter'}")
+    print(f"saved adapter -> {adapter_dir}")
     return 0
 
 

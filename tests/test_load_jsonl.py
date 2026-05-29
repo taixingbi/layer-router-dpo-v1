@@ -1,20 +1,16 @@
-"""CPU-only tests for scripts/load_jsonl.py (no GPU / no HF download)."""
+"""CPU-only tests for app/load_jsonl.py (no GPU / no HF download)."""
 
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-APP_ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = APP_ROOT / "scripts"
-ORCH_DPO = APP_ROOT.parent / "layer-orchestrator-v1" / "dpo-router"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+from app import load_jsonl as lj
 
-import load_jsonl as lj  # noqa: E402
+APP_ROOT = Path(__file__).resolve().parents[1]
+ORCH_DPO = APP_ROOT.parent / "layer-orchestrator-v1" / "dpo-router"
 
 SAMPLE_RECORD = {
     "prompt": [
@@ -47,6 +43,8 @@ SAMPLE_RECORD = {
 
 
 class _MockTokenizer:
+    """Minimal tokenizer stub with a chat template for unit tests."""
+
     chat_template = (
         "{% for message in messages %}"
         "{{ message['role'] }}: {{ message['content'] }}\n"
@@ -55,6 +53,7 @@ class _MockTokenizer:
     )
 
     def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False):
+        """Render messages like a chat template without tokenizing."""
         parts = []
         for m in messages:
             parts.append(f"{m['role']}: {m['content']}\n")
@@ -65,6 +64,7 @@ class _MockTokenizer:
 
 
 def test_records_to_dpo_rows():
+    """Chosen and rejected completions differ while sharing the same prompt."""
     tok = _MockTokenizer()
     rows = lj.records_to_dpo_rows([SAMPLE_RECORD], tokenizer=tok)
     assert len(rows) == 1
@@ -75,6 +75,7 @@ def test_records_to_dpo_rows():
 
 
 def test_load_dpo_dataset_from_output(tmp_path):
+    """Load a single-record train file with no validation split."""
     train_path = tmp_path / "train.jsonl"
     train_path.write_text(json.dumps(SAMPLE_RECORD) + "\n", encoding="utf-8")
     tok = _MockTokenizer()
@@ -88,6 +89,7 @@ def test_load_dpo_dataset_from_output(tmp_path):
     reason="run layer-orchestrator-v1 dpo-router/run-build-dpo.sh first",
 )
 def test_load_production_train_jsonl():
+    """Smoke-test real orchestrator JSONL when the sibling repo is present."""
     from transformers import AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", trust_remote_code=True)

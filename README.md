@@ -2,142 +2,118 @@
 
 **QLoRA DPO training** for the HuntAI intent router (offline batch job on LAN GPU nodes). Consumes JSONL from [layer-orchestrator-v1 `dpo-router/output`](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/dpo-router/output); does not run as a cluster service.
 
-**Base model (pick one):**
-
-| Profile | Model | When |
-|---------|--------|------|
-| **Option A (recommended on 16GB / RTX 3090)** | `Qwen/Qwen2.5-1.5B-Instruct` | Router-only DPO; fast, low VRAM |
-| Option B | `Qwen/Qwen2.5-7B-Instruct` | Matches prod `LLM_MODEL` / vLLM today; tighter on 16GB |
-
-Production orchestrator still defaults to **7B** until you deploy and point `router_model` / `LLM_MODEL` at your trained checkpoint.
+**Base model:** `Qwen/Qwen2.5-1.5B-Instruct` — router-only DPO; fast and fits 16GB / RTX 3090.
 
 ## Layout
 
 | Path | Role |
 |------|------|
-| `scripts/load_jsonl.py` | JSONL → TRL `prompt` / `chosen` / `rejected` |
-| `scripts/train_dpo.py` | QLoRA + `DPOTrainer` |
-| `scripts/export_merge.py` | Optional merge for full-weight vLLM deploy |
-| `fetch-dataset.sh` | Download `train.jsonl` / `val.jsonl` from GitHub (GPU node) |
-| `run-train.sh` | Core runner: `[BASE_MODEL] [OUTPUT_DIR]` (+ env / flags) |
-| `run-train-qwen25-1.5b.sh` | Option A: passes `Qwen/Qwen2.5-1.5B-Instruct` |
-| `run-train-qwen25-7b.sh` | Option B: passes `Qwen/Qwen2.5-7B-Instruct` |
-| `run-export-merge.sh` | Merge wrapper |
-| `data/` | Downloaded JSONL (gitignored; default train input) |
+| `app/main.py` | End-to-end CLI: fetch → load → train (default), `merge` |
+| `app/pipeline.py` | Fetch dataset, validate load, orchestrate training |
+| `app/load_jsonl.py` | JSONL → TRL `prompt` / `chosen` / `rejected` |
+| `app/train_dpo.py` | QLoRA + `DPOTrainer` |
+| `app/export_merge.py` | Optional merge for full-weight vLLM deploy |
+| `data/` | Training JSONL (gitignored; default `./data/train.jsonl`, `val.jsonl`) |
 | `checkpoints/` | Training output (gitignored) |
 
-## Load dataset (different machine than orchestrator)
+## Dataset
 
-Training JSONL is **committed** on `main` here:
-
-**https://github.com/taixingbi/layer-orchestrator-v1/tree/main/dpo-router/output**
-
-Files: `train.jsonl`, `val.jsonl`, `build-stats.json`.
-
-On a GPU node that only has `layer-router-dpo-v1` (no sibling `layer-orchestrator-v1` checkout):
-
-```bash
-cd layer-router-dpo-v1
-bash fetch-dataset.sh
-# -> data/train.jsonl, data/val.jsonl, data/build-stats.json
-bash run-train-qwen25-1.5b.sh
-```
-
-`run-train.sh` picks JSONL paths in order:
-
-1. `TRAIN_JSONL` / `VAL_JSONL` if set
-2. `./data/*.jsonl` (after `fetch-dataset.sh`)
-3. `../layer-orchestrator-v1/dpo-router/output/*.jsonl` (monorepo sibling)
-
-### Manual download
-
-```bash
-mkdir -p data
-REF=main
-BASE=https://raw.githubusercontent.com/taixingbi/layer-orchestrator-v1/${REF}/dpo-router/output
-curl -fsSL "$BASE/train.jsonl" -o data/train.jsonl
-curl -fsSL "$BASE/val.jsonl"   -o data/val.jsonl
-curl -fsSL "$BASE/build-stats.json" -o data/build-stats.json
-```
-
-Pin another branch or tag: `ORCHESTRATOR_DPO_REF=router-dpo-v2 bash fetch-dataset.sh`
-
-### Rebuild dataset (orchestrator machine)
-
-When gold or eval results change, rebuild and push from a host with `layer-orchestrator-v1`:
-
-```bash
-cd layer-orchestrator-v1
-ROUTER_PROMPT_VERSION=router-v2.00 bash gold-test/run-router-eval.sh   # optional
-PYTHON=./venv/bin/python bash dpo-router/run-build-dpo.sh
-git add dpo-router/output && git commit -m "Update router DPO dataset" && git push
-```
-
-Then on the GPU node: `bash fetch-dataset.sh` again.
+Training JSONL is pulled automatically on first run from [layer-orchestrator-v1 `dpo-router/output`](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/dpo-router/output) into `./data/`. Or use a monorepo sibling: `../layer-orchestrator-v1/dpo-router/output/*.jsonl`.
 
 ## Train on GPU node (16GB)
 
+On Debian/Ubuntu, install the venv module once (version must match `python3 --version`, e.g. 3.12):
+
 ```bash
-git clone <layer-router-dpo-v1-url> && cd layer-router-dpo-v1
-bash fetch-dataset.sh
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-bash run-train-qwen25-1.5b.sh
+sudo apt install -y python3.12-venv
 ```
 
-1. **Free GPU** — do not train on the same card as vLLM at ~70% VRAM. Train on `173` while inference stays on `176`, or scale vLLM down on the train host.
+```bash
+git clone <layer-router-dpo-v1-url> && cd layer-router-dpo-v1
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env   # optional: CUDA_VISIBLE_DEVICES, HF_TOKEN, etc.
+```
+
+1. **Free GPU** — do not train on the same card as vLLM at ~70% VRAM. Train on `173` while inference stays on `176`, or set `CUDA_VISIBLE_DEVICES` in `.env`.
 2. Output: `checkpoints/router-dpo-*/adapter/`
 
 See [deploy-vllm-inference.md](../huntai-k3s/docs/deploy-vllm-inference.md) for LoRA serving.
 
-### Option A — smaller model, easiest (RTX 3090 / 16GB)
-
-Router DPO is mostly **route + JSON**; `Qwen2.5-1.5B-Instruct` is enough and trains comfortably on 16GB.
+### Train (1.5B / RTX 3090)
 
 ```bash
-bash run-train-qwen25-1.5b.sh
-# same as:
-bash run-train.sh Qwen/Qwen2.5-1.5B-Instruct
+source .venv/bin/activate
+python -m app.main
 ```
 
-Optional second argument = output dir; default `checkpoints/router-dpo-qwen25-1.5b-<timestamp>/`.
+One command: **fetch** JSONL (if missing) → **load** / validate counts → **train** DPO. Defaults: `Qwen/Qwen2.5-1.5B-Instruct`, `max-length=1024`, output under `checkpoints/router-dpo-qwen25-1.5b-<timestamp>/`.
+
+Override example:
 
 ```bash
-MAX_LENGTH=1024 GRAD_ACCUM=8 NUM_TRAIN_EPOCHS=2 \
-bash run-train.sh Qwen/Qwen2.5-1.5B-Instruct checkpoints/my-1.5b-run
+python -m app.main --output-dir checkpoints/my-run --num-train-epochs 1
 ```
 
-Deploy: serve LoRA on a **1.5B** vLLM base (or merged 1.5B weights), then set orchestrator `router_model` to that model id for eval.
+After `pip install -e .`, run `layer-router-dpo` (same as above).
 
-### Option B — 7B (match production base)
+### Docker (GPU node)
+
+Image is built and pushed to Docker Hub on every push to `main` (see [`.github/workflows/docker-push.yml`](.github/workflows/docker-push.yml), same pattern as [layer-orchestrator-v1](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/.github/workflows)).
+
+**Secrets:** `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` in repo Settings → Secrets and variables → Actions.
+
+**Run training** (needs [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)):
 
 ```bash
-bash run-train-qwen25-7b.sh
-# same as:
-bash run-train.sh Qwen/Qwen2.5-7B-Instruct
+docker run --rm --gpus all \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/checkpoints:/app/checkpoints" \
+  -v layer-router-dpo-hf:/cache/huggingface \
+  -e HF_TOKEN="${HF_TOKEN:-}" \
+  -e CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
+  taixingbi/layer-router-dpo-v1:latest
 ```
 
-**OOM on 16GB:** use Option A, or `MAX_LENGTH=1536`, `GRAD_ACCUM=4`, `NUM_TRAIN_EPOCHS=1`.
+**Merge adapter:**
 
-### `run-train.sh` parameters
-
-```text
-run-train.sh [OPTIONS] [BASE_MODEL] [OUTPUT_DIR] [-- train_dpo.py args...]
+```bash
+docker run --rm --gpus all \
+  -v "$(pwd)/checkpoints:/app/checkpoints" \
+  taixingbi/layer-router-dpo-v1:latest merge \
+  --adapter-dir /app/checkpoints/.../adapter \
+  --output-dir /app/checkpoints/merged \
+  --base-model Qwen/Qwen2.5-1.5B-Instruct
 ```
 
-| Positional / flag | Meaning |
-|-------------------|---------|
-| `BASE_MODEL` | HuggingFace id (default `Qwen/Qwen2.5-7B-Instruct`) |
-| `OUTPUT_DIR` | Checkpoint root (default `checkpoints/router-dpo-<slug>-<time>/`) |
-| `-m`, `--model` | Same as first positional |
-| `-o`, `--output-dir` | Same as second positional |
+Replace `taixingbi` with your Docker Hub username if you fork the repo.
 
-Env still works: `BASE_MODEL`, `OUTPUT_DIR`, `MAX_LENGTH`, `GRAD_ACCUM`, `TRAIN_JSONL`, etc.
+**OOM on 16GB:** free the GPU from other processes, or lower `--max-length` / `--gradient-accumulation-steps` / `--num-train-epochs`.
+
+### Flags (`python -m app.main`)
+
+| Flag / env | Meaning |
+|------------|---------|
+| `--train-jsonl`, `--val-jsonl` | Dataset paths (default `./data/*.jsonl`) |
+| `--base-model` | HuggingFace id (`BASE_MODEL`) |
+| `--output-dir` | Checkpoint root (default auto timestamp under `checkpoints/`) |
+| `--max-length` | `MAX_LENGTH` (default 2048) |
+| `--num-train-epochs` | `NUM_TRAIN_EPOCHS` |
+| `--gradient-accumulation-steps` | `GRAD_ACCUM` |
+| `--per-device-train-batch-size` | `PER_DEVICE_TRAIN_BATCH_SIZE` |
 
 ## Deploy and verify
 
 1. **LoRA (recommended):** copy `adapter/` to e.g. `/data/models/router-dpo-v1`, enable vLLM `--enable-lora` / `--lora-modules`.
-2. **Merged:** `bash run-export-merge.sh --adapter-dir checkpoints/.../adapter --output-dir /data/models/merged`
+2. **Merged:**
+
+```bash
+python -m app.main merge \
+  --adapter-dir checkpoints/.../adapter \
+  --output-dir /data/models/merged \
+  --base-model Qwen/Qwen2.5-1.5B-Instruct
+```
+
 3. **Test:** `router_model` on `POST /v1/orchestrator/eval/router`, then gold eval on orchestrator.
 4. **Promote:** set `LLM_MODEL` when match rate improves.
 
