@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "layer-router-dpo-v1"
+version = "0.1.0"
+description = "QLoRA DPO training for HuntAI intent router (offline GPU batch job)"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+train = [
+  "torch>=2.2.0",
+  "transformers>=4.44.0",
+  "trl>=0.9.6",
+  "peft>=0.12.0",
+  "bitsandbytes>=0.43.0",
+  "accelerate>=0.33.0",
+  "datasets>=2.20.0",
+  "sentencepiece>=0.2.0",
+  "protobuf>=4.25.0",
+]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
