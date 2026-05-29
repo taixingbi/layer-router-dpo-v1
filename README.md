@@ -57,38 +57,17 @@ python -m app.main --output-dir checkpoints/my-run --num-train-epochs 1
 
 After `pip install -e .`, run `layer-router-dpo` (same as above).
 
-### Docker (GPU node)
-
-Image is built and pushed to Docker Hub on every push to `main` (see [`.github/workflows/docker-push.yml`](.github/workflows/docker-push.yml), same pattern as [layer-orchestrator-v1](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/.github/workflows)).
-
-**Secrets:** `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` in repo Settings → Secrets and variables → Actions.
-
-**Run training** (needs [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)):
-
-```bash
-docker run --rm --gpus all \
-  -v "$(pwd)/data:/app/data" \
-  -v "$(pwd)/checkpoints:/app/checkpoints" \
-  -v layer-router-dpo-hf:/cache/huggingface \
-  -e HF_TOKEN="${HF_TOKEN:-}" \
-  -e CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
-  taixingbi/layer-router-dpo-v1:latest
-```
-
-**Merge adapter:**
-
-```bash
-docker run --rm --gpus all \
-  -v "$(pwd)/checkpoints:/app/checkpoints" \
-  taixingbi/layer-router-dpo-v1:latest merge \
-  --adapter-dir /app/checkpoints/.../adapter \
-  --output-dir /app/checkpoints/merged \
-  --base-model Qwen/Qwen2.5-1.5B-Instruct
-```
-
-Replace `taixingbi` with your Docker Hub username if you fork the repo.
-
 **OOM on 16GB:** free the GPU from other processes, or lower `--max-length` / `--gradient-accumulation-steps` / `--num-train-epochs`.
+
+### Deploy to EC2 GPU
+
+Push to `main` or run [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) manually (same pattern as [ec2-gpu-vllm-inference](https://github.com/taixingbi/ec2-gpu-vllm-inference/blob/main/.github/workflows/deploy.yml)).
+
+**Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `HUGGING_FACE_HUB_TOKEN`
+
+**Variables:** `DEPLOY_BUCKET`, `EC2_IAM_INSTANCE_PROFILE`, `AWS_REGION` (optional), `AWS_AMI_ID` (optional), `AWS_SECURITY_GROUP_ID` or `AWS_SECURITY_GROUP_NAME`, `EC2_KEY_PAIR` (optional)
+
+The workflow ensures a `g5.xlarge` GPU instance (`ec2-gpu-layer-router-dpo-v1`), syncs app + deploy files to S3, and runs `deploy/remote-deploy.sh` via SSM to install the venv and start DPO training. Checkpoints land under `/home/ubuntu/layer-router-dpo-v1/checkpoints/` on the instance.
 
 ### Flags (`python -m app.main`)
 
