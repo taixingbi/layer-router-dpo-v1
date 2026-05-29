@@ -32,7 +32,11 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--max-length", type=int, default=int(os.getenv("MAX_LENGTH", "2048")))
     p.add_argument("--num-train-epochs", type=float, default=float(os.getenv("NUM_TRAIN_EPOCHS", "2")))
-    p.add_argument("--per-device-train-batch-size", type=int, default=1)
+    p.add_argument(
+        "--per-device-train-batch-size",
+        type=int,
+        default=int(os.getenv("PER_DEVICE_TRAIN_BATCH_SIZE", "1")),
+    )
     p.add_argument("--gradient-accumulation-steps", type=int, default=int(os.getenv("GRAD_ACCUM", "8")))
     p.add_argument("--learning-rate", type=float, default=float(os.getenv("LEARNING_RATE", "5e-5")))
     p.add_argument("--beta", type=float, default=float(os.getenv("DPO_BETA", "0.1")))

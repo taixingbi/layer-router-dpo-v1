@@ -2,7 +2,14 @@
 
 **QLoRA DPO training** for the HuntAI intent router (offline batch job on LAN GPU nodes). Consumes JSONL from [layer-orchestrator-v1 `dpo-router/output`](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/dpo-router/output); does not run as a cluster service.
 
-**Base model:** `Qwen/Qwen2.5-7B-Instruct` (same as orchestrator `LLM_MODEL` / vLLM).
+**Base model (pick one):**
+
+| Profile | Model | When |
+|---------|--------|------|
+| **Option A (recommended on 16GB / RTX 3090)** | `Qwen/Qwen2.5-1.5B-Instruct` | Router-only DPO; fast, low VRAM |
+| Option B | `Qwen/Qwen2.5-7B-Instruct` | Matches prod `LLM_MODEL` / vLLM today; tighter on 16GB |
+
+Production orchestrator still defaults to **7B** until you deploy and point `router_model` / `LLM_MODEL` at your trained checkpoint.
 
 ## Layout
 
@@ -12,7 +19,9 @@
 | `scripts/train_dpo.py` | QLoRA + `DPOTrainer` |
 | `scripts/export_merge.py` | Optional merge for full-weight vLLM deploy |
 | `fetch-dataset.sh` | Download `train.jsonl` / `val.jsonl` from GitHub (GPU node) |
-| `run-train.sh` | Training wrapper |
+| `run-train.sh` | Core runner: `[BASE_MODEL] [OUTPUT_DIR]` (+ env / flags) |
+| `run-train-qwen25-1.5b.sh` | Option A: passes `Qwen/Qwen2.5-1.5B-Instruct` |
+| `run-train-qwen25-7b.sh` | Option B: passes `Qwen/Qwen2.5-7B-Instruct` |
 | `run-export-merge.sh` | Merge wrapper |
 | `data/` | Downloaded JSONL (gitignored; default train input) |
 | `checkpoints/` | Training output (gitignored) |
@@ -31,10 +40,10 @@ On a GPU node that only has `layer-router-dpo-v1` (no sibling `layer-orchestrato
 cd layer-router-dpo-v1
 bash fetch-dataset.sh
 # -> data/train.jsonl, data/val.jsonl, data/build-stats.json
-bash run-train.sh
+bash run-train-qwen25-1.5b.sh
 ```
 
-`run-train.sh` picks paths in order:
+`run-train.sh` picks JSONL paths in order:
 
 1. `TRAIN_JSONL` / `VAL_JSONL` if set
 2. `./data/*.jsonl` (after `fetch-dataset.sh`)
@@ -73,7 +82,7 @@ git clone <layer-router-dpo-v1-url> && cd layer-router-dpo-v1
 bash fetch-dataset.sh
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-bash run-train.sh
+bash run-train-qwen25-1.5b.sh
 ```
 
 1. **Free GPU** — do not train on the same card as vLLM at ~70% VRAM. Train on `173` while inference stays on `176`, or scale vLLM down on the train host.
@@ -81,20 +90,49 @@ bash run-train.sh
 
 See [deploy-vllm-inference.md](../huntai-k3s/docs/deploy-vllm-inference.md) for LoRA serving.
 
-### Environment
+### Option A — smaller model, easiest (RTX 3090 / 16GB)
 
-| Variable | Default |
-|----------|---------|
-| `TRAIN_JSONL` / `VAL_JSONL` | `./data/*.jsonl` or sibling orchestrator path |
-| `ORCHESTRATOR_DPO_DIR` | `../layer-orchestrator-v1/dpo-router` (local build only) |
-| `ORCHESTRATOR_DPO_REF` | `main` (for `fetch-dataset.sh`) |
-| `BASE_MODEL` | `Qwen/Qwen2.5-7B-Instruct` |
-| `OUTPUT_DIR` | `./checkpoints/router-dpo-YYYYMMDD-HHMM` |
-| `NUM_TRAIN_EPOCHS` | `2` |
-| `GRAD_ACCUM` | `8` |
-| `LORA_R` | `32` |
+Router DPO is mostly **route + JSON**; `Qwen2.5-1.5B-Instruct` is enough and trains comfortably on 16GB.
 
-**OOM:** `MAX_LENGTH=1536`, `GRAD_ACCUM=4`, `NUM_TRAIN_EPOCHS=1`.
+```bash
+bash run-train-qwen25-1.5b.sh
+# same as:
+bash run-train.sh Qwen/Qwen2.5-1.5B-Instruct
+```
+
+Optional second argument = output dir; default `checkpoints/router-dpo-qwen25-1.5b-<timestamp>/`.
+
+```bash
+MAX_LENGTH=1024 GRAD_ACCUM=8 NUM_TRAIN_EPOCHS=2 \
+bash run-train.sh Qwen/Qwen2.5-1.5B-Instruct checkpoints/my-1.5b-run
+```
+
+Deploy: serve LoRA on a **1.5B** vLLM base (or merged 1.5B weights), then set orchestrator `router_model` to that model id for eval.
+
+### Option B — 7B (match production base)
+
+```bash
+bash run-train-qwen25-7b.sh
+# same as:
+bash run-train.sh Qwen/Qwen2.5-7B-Instruct
+```
+
+**OOM on 16GB:** use Option A, or `MAX_LENGTH=1536`, `GRAD_ACCUM=4`, `NUM_TRAIN_EPOCHS=1`.
+
+### `run-train.sh` parameters
+
+```text
+run-train.sh [OPTIONS] [BASE_MODEL] [OUTPUT_DIR] [-- train_dpo.py args...]
+```
+
+| Positional / flag | Meaning |
+|-------------------|---------|
+| `BASE_MODEL` | HuggingFace id (default `Qwen/Qwen2.5-7B-Instruct`) |
+| `OUTPUT_DIR` | Checkpoint root (default `checkpoints/router-dpo-<slug>-<time>/`) |
+| `-m`, `--model` | Same as first positional |
+| `-o`, `--output-dir` | Same as second positional |
+
+Env still works: `BASE_MODEL`, `OUTPUT_DIR`, `MAX_LENGTH`, `GRAD_ACCUM`, `TRAIN_JSONL`, etc.
 
 ## Deploy and verify
 
