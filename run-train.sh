@@ -7,8 +7,18 @@ PLATFORM_ROOT="$(cd "$APP_ROOT/.." && pwd)"
 ORCH_DPO="${ORCHESTRATOR_DPO_DIR:-$PLATFORM_ROOT/layer-orchestrator-v1/dpo-router}"
 SCRIPTS="$APP_ROOT/scripts"
 
-TRAIN_JSONL="${TRAIN_JSONL:-$ORCH_DPO/output/train.jsonl}"
-VAL_JSONL="${VAL_JSONL:-$ORCH_DPO/output/val.jsonl}"
+if [[ -n "${TRAIN_JSONL:-}" ]]; then
+  :
+elif [[ -f "$APP_ROOT/data/train.jsonl" ]]; then
+  TRAIN_JSONL="$APP_ROOT/data/train.jsonl"
+  VAL_JSONL="${VAL_JSONL:-$APP_ROOT/data/val.jsonl}"
+elif [[ -f "$ORCH_DPO/output/train.jsonl" ]]; then
+  TRAIN_JSONL="$ORCH_DPO/output/train.jsonl"
+  VAL_JSONL="${VAL_JSONL:-$ORCH_DPO/output/val.jsonl}"
+else
+  TRAIN_JSONL="$ORCH_DPO/output/train.jsonl"
+  VAL_JSONL="${VAL_JSONL:-$ORCH_DPO/output/val.jsonl}"
+fi
 BASE_MODEL="${BASE_MODEL:-Qwen/Qwen2.5-7B-Instruct}"
 OUTPUT_DIR="${OUTPUT_DIR:-$APP_ROOT/checkpoints/router-dpo-$(date +%Y%m%d-%H%M)}"
 VENV="${VENV:-$APP_ROOT/.venv}"
@@ -16,7 +26,8 @@ PYTHON="${PYTHON:-}"
 
 if [[ ! -f "$TRAIN_JSONL" ]]; then
   echo "Missing $TRAIN_JSONL" >&2
-  echo "Build dataset: cd layer-orchestrator-v1 && bash dpo-router/run-build-dpo.sh" >&2
+  echo "On a GPU-only host: bash fetch-dataset.sh" >&2
+  echo "Or build locally: cd layer-orchestrator-v1 && bash dpo-router/run-build-dpo.sh" >&2
   exit 1
 fi
 
