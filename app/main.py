@@ -79,7 +79,7 @@ def _add_train_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--no-quant", action="store_true", help="Disable 4-bit (needs 24GB+ VRAM)")
     p.add_argument(
         "--hf-repo-id",
-        default=os.getenv("HF_REPO_ID"),
+        default=os.getenv("HF_REPO_ID", "taixingbi/layer-router-dpo-v1"),
         help="Hugging Face model repo to upload adapter after training (HF_REPO_ID)",
     )
     p.add_argument("--no-hf-upload", action="store_true", help="Skip Hugging Face Hub upload")
