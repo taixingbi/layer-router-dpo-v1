@@ -193,12 +193,16 @@ jobs:
         env:
           INSTANCE_ID: ${{ needs.ensure-instance.outputs.instance_id }}
           DEPLOY_BUCKET: ${{ vars.DEPLOY_BUCKET }}
-          HF_TOKEN: ${{ secrets.HUGGING_FACE_HUB_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           AWS_REGION: ${{ env.AWS_REGION }}
         run: |
           set -e
           if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "null" ]; then
             echo "ERROR: No instance_id from ensure-instance"
+            exit 1
+          fi
+          if [ -z "$HF_TOKEN" ]; then
+            echo "ERROR: HF_TOKEN secret is required."
             exit 1
           fi
           HF_ESC=$(printf '%s' "$HF_TOKEN" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')

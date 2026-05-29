@@ -77,6 +77,12 @@ def _add_train_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--save-steps", type=int, default=50)
     p.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--no-quant", action="store_true", help="Disable 4-bit (needs 24GB+ VRAM)")
+    p.add_argument(
+        "--hf-repo-id",
+        default=os.getenv("HF_REPO_ID"),
+        help="Hugging Face model repo to upload adapter after training (HF_REPO_ID)",
+    )
+    p.add_argument("--no-hf-upload", action="store_true", help="Skip Hugging Face Hub upload")
     p.set_defaults(_handler=_cmd_train)
 
 

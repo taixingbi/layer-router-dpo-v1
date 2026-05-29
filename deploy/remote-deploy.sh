@@ -35,6 +35,14 @@ if [ -n "${HF_TOKEN:-}" ]; then
   sed -i '/^HF_TOKEN=/d' "$ENV_FILE" 2>/dev/null || true
   printf 'HF_TOKEN=%s\n' "$HF_TOKEN" >> "$ENV_FILE"
 fi
+if [ -n "${HF_REPO_ID:-}" ]; then
+  sed -i '/^HF_REPO_ID=/d' "$ENV_FILE" 2>/dev/null || true
+  printf 'HF_REPO_ID=%s\n' "$HF_REPO_ID" >> "$ENV_FILE"
+fi
+if [ -z "${HF_REPO_ID:-}" ]; then
+  echo "ERROR: HF_REPO_ID is required (Hugging Face model repo for trained weights)"
+  exit 1
+fi
 
 echo "=== Run DPO training ==="
 cd "$APP_DIR"

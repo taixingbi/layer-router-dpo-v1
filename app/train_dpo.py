@@ -56,6 +56,12 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--save-steps", type=int, default=50)
     p.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--no-quant", action="store_true", help="Disable 4-bit (needs 24GB+ VRAM)")
+    p.add_argument(
+        "--hf-repo-id",
+        default=os.getenv("HF_REPO_ID"),
+        help="Hugging Face model repo to upload adapter after training (HF_REPO_ID)",
+    )
+    p.add_argument("--no-hf-upload", action="store_true", help="Skip Hugging Face Hub upload")
     return p.parse_args(argv)
 
 
@@ -166,6 +172,14 @@ def run(args: argparse.Namespace) -> int:
     }
     (args.output_dir / "train_meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     print(f"saved adapter -> {adapter_dir}")
+
+    if args.hf_repo_id and not args.no_hf_upload:
+        from app.hf_upload import upload_checkpoint
+
+        upload_checkpoint(args.output_dir, args.hf_repo_id)
+    elif not args.no_hf_upload and not args.hf_repo_id:
+        print("skip hub upload: set HF_REPO_ID or --hf-repo-id to publish weights", flush=True)
+
     return 0
 
 

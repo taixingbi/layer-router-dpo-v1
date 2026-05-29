@@ -36,7 +36,7 @@ cp .env.example .env   # optional: CUDA_VISIBLE_DEVICES, HF_TOKEN, etc.
 ```
 
 1. **Free GPU** — do not train on the same card as vLLM at ~70% VRAM. Train on `173` while inference stays on `176`, or set `CUDA_VISIBLE_DEVICES` in `.env`.
-2. Output: `checkpoints/router-dpo-*/adapter/`
+2. Output: `checkpoints/router-dpo-*/adapter/` (local) or Hugging Face Hub when `HF_REPO_ID` is set.
 
 See [deploy-vllm-inference.md](../huntai-k3s/docs/deploy-vllm-inference.md) for LoRA serving.
 
@@ -63,11 +63,13 @@ After `pip install -e .`, run `layer-router-dpo` (same as above).
 
 Push to `main` or run [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) manually (same pattern as [ec2-gpu-vllm-inference](https://github.com/taixingbi/ec2-gpu-vllm-inference/blob/main/.github/workflows/deploy.yml)).
 
-**Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `HUGGING_FACE_HUB_TOKEN`
+**Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `HF_TOKEN`, `HF_REPO_ID` (e.g. `your-username/layer-router-dpo-v1`)
 
 **Variables:** `DEPLOY_BUCKET`, `EC2_IAM_INSTANCE_PROFILE`, `AWS_REGION` (optional), `AWS_AMI_ID` (optional), `AWS_SECURITY_GROUP_ID` or `AWS_SECURITY_GROUP_NAME`, `EC2_KEY_PAIR` (optional)
 
-The workflow ensures a `g5.xlarge` GPU instance (`ec2-gpu-layer-router-dpo-v1`), syncs app + deploy files to S3, and runs `deploy/remote-deploy.sh` via SSM to install the venv and start DPO training. Checkpoints land under `/home/ubuntu/layer-router-dpo-v1/checkpoints/` on the instance.
+`HF_REPO_ID` may also be set as a repo **variable** instead of a secret (repo id is not sensitive).
+
+The workflow ensures a `g5.xlarge` GPU instance (`ec2-gpu-layer-router-dpo-v1`), syncs app + deploy files to S3, and runs `deploy/remote-deploy.sh` via SSM to install the venv and start DPO training. After training, the LoRA adapter is uploaded to `HF_REPO_ID` on Hugging Face Hub. A local copy also lands under `/home/ubuntu/layer-router-dpo-v1/checkpoints/` on the instance.
 
 ### Flags (`python -m app.main`)
 
@@ -80,10 +82,23 @@ The workflow ensures a `g5.xlarge` GPU instance (`ec2-gpu-layer-router-dpo-v1`),
 | `--num-train-epochs` | `NUM_TRAIN_EPOCHS` |
 | `--gradient-accumulation-steps` | `GRAD_ACCUM` |
 | `--per-device-train-batch-size` | `PER_DEVICE_TRAIN_BATCH_SIZE` |
+| `--hf-repo-id` | `HF_REPO_ID` — upload adapter to this Hub repo after training |
+
+## Hugging Face Hub
+
+After training, set `HF_REPO_ID` and `HF_TOKEN` to publish the LoRA adapter:
+
+```bash
+export HF_TOKEN=hf_...
+export HF_REPO_ID=your-username/layer-router-dpo-v1
+python -m app.main
+```
+
+The repo will contain `adapter/` (weights + tokenizer), `train_meta.json`, and a generated `README.md`. Use with vLLM `--enable-lora` or `PeftModel.from_pretrained(base, HF_REPO_ID)`.
 
 ## Deploy and verify
 
-1. **LoRA (recommended):** copy `adapter/` to e.g. `/data/models/router-dpo-v1`, enable vLLM `--enable-lora` / `--lora-modules`.
+1. **LoRA (recommended):** use the Hub repo (`HF_REPO_ID`) or copy `adapter/` locally, enable vLLM `--enable-lora` / `--lora-modules`.
 2. **Merged:**
 
 ```bash
