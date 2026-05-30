@@ -181,11 +181,14 @@ jobs:
           aws s3 sync . "s3://$DEPLOY_BUCKET/app/" \
             --exclude ".git/*" \
             --exclude ".venv/*" \
+            --exclude ".venv-*/*" \
             --exclude "venv/*" \
             --exclude "data/*" \
             --exclude "checkpoints/*" \
             --exclude ".pytest_cache/*" \
             --exclude "__pycache__/*" \
+            --exclude "*.egg-info/*" \
+            --exclude ".cache/*" \
             --delete
           echo "Deploy files synced to s3://$DEPLOY_BUCKET/"
 
@@ -213,7 +216,7 @@ jobs:
             '["set -e", $e, "mkdir -p " + $d + " " + $a,
               ("aws s3 cp s3://" + $b + "/deploy/ " + $d + "/ --recursive"),
               ("rm -rf " + $a + "/.venv " + $a + "/venv"),
-              ("aws s3 sync s3://" + $b + "/app/ " + $a + "/ --delete --exclude \".venv/*\" --exclude \"venv/*\" --exclude \"data/*\" --exclude \"checkpoints/*\" --exclude \".env\""),
+              ("aws s3 sync s3://" + $b + "/app/ " + $a + "/ --delete --exclude \".venv/*\" --exclude \".venv-*/*\" --exclude \"venv/*\" --exclude \"data/*\" --exclude \"checkpoints/*\" --exclude \".env\" --exclude \"*.egg-info/*\""),
               "chown -R ubuntu:ubuntu " + $d + " " + $a,
               "cd " + $d, "chmod +x remote-deploy.sh",
               ("APP_DIR=" + $a + " DEPLOY_DIR=" + $d + " bash remote-deploy.sh")]')
