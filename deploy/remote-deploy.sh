@@ -45,13 +45,9 @@ echo "=== Prepare app directory ==="
 cd "$APP_DIR" || { echo "ERROR: $APP_DIR not found"; exit 1; }
 mkdir -p data checkpoints
 
-if [ -d .venv ] && ! .venv/bin/python -c 'import sys; exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
-  echo "Removing .venv (Python <3.11)"
-  rm -rf .venv
-fi
-if [ ! -d .venv ]; then
-  "$PYTHON" -m venv .venv
-fi
+echo "=== Create fresh venv ==="
+rm -rf .venv
+"$PYTHON" -m venv .venv
 # shellcheck disable=SC1091
 source .venv/bin/activate
 python -m pip install --upgrade pip

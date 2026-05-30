@@ -212,7 +212,8 @@ jobs:
           COMMANDS=$(jq -n --arg e "$EXPORT_CMD" --arg b "$DEPLOY_BUCKET" --arg d "$DEPLOY_DIR" --arg a "$APP_DIR" \
             '["set -e", $e, "mkdir -p " + $d + " " + $a,
               ("aws s3 cp s3://" + $b + "/deploy/ " + $d + "/ --recursive"),
-              ("aws s3 sync s3://" + $b + "/app/ " + $a + "/ --delete"),
+              ("rm -rf " + $a + "/.venv " + $a + "/venv"),
+              ("aws s3 sync s3://" + $b + "/app/ " + $a + "/ --delete --exclude \".venv/*\" --exclude \"venv/*\" --exclude \"data/*\" --exclude \"checkpoints/*\" --exclude \".env\""),
               "chown -R ubuntu:ubuntu " + $d + " " + $a,
               "cd " + $d, "chmod +x remote-deploy.sh",
               ("APP_DIR=" + $a + " DEPLOY_DIR=" + $d + " bash remote-deploy.sh")]')
