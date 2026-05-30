@@ -50,8 +50,19 @@ rm -rf .venv
 "$PYTHON" -m venv .venv
 # shellcheck disable=SC1091
 source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -e .
+python -m pip install --upgrade pip setuptools wheel
+
+echo "=== Install GPU dependencies ==="
+pip install -r "$DEPLOY_DIR/requirements-gpu.txt"
+pip install -e . --no-deps
+
+echo "=== Verify ML imports ==="
+python -c "
+import torch
+from transformers import AutoModelForCausalLM
+from peft import LoraConfig
+print('deps ok:', torch.__version__, 'cuda:', torch.cuda.is_available())
+"
 
 echo "=== Configure environment ==="
 ENV_FILE="$APP_DIR/.env"
