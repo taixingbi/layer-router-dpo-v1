@@ -5,8 +5,11 @@ set -euo pipefail
 
 DEPLOY_DIR="${DEPLOY_DIR:-/home/ubuntu/deploy}"
 APP_DIR="${APP_DIR:-/home/ubuntu/layer-router-dpo-v1}"
+DEPLOY_LOG="/tmp/router-dpo-deploy.log"
 
 export DEBIAN_FRONTEND=noninteractive
+
+exec > >(tee -a "$DEPLOY_LOG") 2>&1
 
 _find_python() {
   local cmd ver
