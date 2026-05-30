@@ -65,7 +65,7 @@ Push to `main` or run [`.github/workflows/deploy.yml`](.github/workflows/deploy.
 
 **Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `HF_TOKEN`, `HF_REPO_ID` (e.g. `your-username/layer-router-dpo-v1`)
 
-**Variables:** `DEPLOY_BUCKET`, `EC2_IAM_INSTANCE_PROFILE`, `AWS_REGION` (optional), `AWS_AMI_ID` (optional), `AWS_SECURITY_GROUP_ID` or `AWS_SECURITY_GROUP_NAME`, `EC2_KEY_PAIR` (optional), `AUTO_TERMINATE_EC2` (optional, set to `true` to terminate the GPU instance after a successful Hugging Face upload)
+**Variables:** `DEPLOY_BUCKET`, `EC2_IAM_INSTANCE_PROFILE`, `AWS_REGION` (optional), `AWS_AMI_ID` (optional), `AWS_SECURITY_GROUP_ID` or `AWS_SECURITY_GROUP_NAME`, `EC2_KEY_PAIR` (optional), `AUTO_TERMINATE_EC2` (optional, default `true` — terminate the GPU instance when the SSM deploy command finishes, success or failure)
 
 `HF_REPO_ID` may also be set as a repo **variable** instead of a secret (repo id is not sensitive).
 
