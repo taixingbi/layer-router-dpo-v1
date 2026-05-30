@@ -58,8 +58,8 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--no-quant", action="store_true", help="Disable 4-bit (needs 24GB+ VRAM)")
     p.add_argument(
         "--hf-repo-id",
-        default=os.getenv("HF_REPO_ID", "taixingbi/layer-router-dpo-v1"),
-        help="Hugging Face model repo to upload adapter after training (HF_REPO_ID)",
+        default=os.getenv("HF_REPO_ID"),
+        help="Hugging Face model repo (default: {HF_TOKEN user}/layer-router-dpo-v1)",
     )
     p.add_argument("--no-hf-upload", action="store_true", help="Skip Hugging Face Hub upload")
     return p.parse_args(argv)
@@ -173,12 +173,17 @@ def run(args: argparse.Namespace) -> int:
     (args.output_dir / "train_meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     print(f"saved adapter -> {adapter_dir}")
 
-    if args.hf_repo_id and not args.no_hf_upload:
-        from app.hf_upload import upload_checkpoint
+    if not args.no_hf_upload and os.getenv("HF_TOKEN"):
+        try:
+            from app.hf_upload import upload_checkpoint
 
-        upload_checkpoint(args.output_dir, args.hf_repo_id)
-    elif not args.no_hf_upload and not args.hf_repo_id:
-        print("skip hub upload: set HF_REPO_ID or --hf-repo-id to publish weights", flush=True)
+            upload_checkpoint(args.output_dir, args.hf_repo_id)
+        except SystemExit as exc:
+            print(f"WARNING: Hub upload failed (checkpoint saved locally): {exc}", file=sys.stderr)
+        except Exception as exc:
+            print(f"WARNING: Hub upload failed (checkpoint saved locally): {exc}", file=sys.stderr)
+    elif not args.no_hf_upload:
+        print("skip hub upload: HF_TOKEN not set", flush=True)
 
     return 0
 

@@ -5,7 +5,6 @@ set -euo pipefail
 
 DEPLOY_DIR="${DEPLOY_DIR:-/home/ubuntu/deploy}"
 APP_DIR="${APP_DIR:-/home/ubuntu/layer-router-dpo-v1}"
-HF_REPO_ID="${HF_REPO_ID:-taixingbi/layer-router-dpo-v1}"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -74,7 +73,9 @@ if [ -n "${HF_TOKEN:-}" ]; then
   printf 'HF_TOKEN=%s\n' "$HF_TOKEN" >> "$ENV_FILE"
 fi
 sed -i '/^HF_REPO_ID=/d' "$ENV_FILE" 2>/dev/null || true
-printf 'HF_REPO_ID=%s\n' "$HF_REPO_ID" >> "$ENV_FILE"
+if [ -n "${HF_REPO_ID:-}" ]; then
+  printf 'HF_REPO_ID=%s\n' "$HF_REPO_ID" >> "$ENV_FILE"
+fi
 
 echo "=== Run DPO training ==="
 cd "$APP_DIR"
