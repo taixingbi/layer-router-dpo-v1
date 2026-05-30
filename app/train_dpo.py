@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -178,8 +179,6 @@ def run(args: argparse.Namespace) -> int:
             from app.hf_upload import upload_checkpoint
 
             upload_checkpoint(args.output_dir, args.hf_repo_id)
-        except SystemExit as exc:
-            print(f"WARNING: Hub upload failed (checkpoint saved locally): {exc}", file=sys.stderr)
         except Exception as exc:
             print(f"WARNING: Hub upload failed (checkpoint saved locally): {exc}", file=sys.stderr)
     elif not args.no_hf_upload:

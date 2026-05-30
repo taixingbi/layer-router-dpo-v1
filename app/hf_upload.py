@@ -8,10 +8,14 @@ import sys
 from pathlib import Path
 
 
+class HubUploadError(RuntimeError):
+    """Raised when checkpoint upload to Hugging Face Hub fails."""
+
+
 def _hub_token(explicit: str | None = None) -> str:
     token = explicit or os.getenv("HF_TOKEN")
     if not token:
-        raise SystemExit("HF_TOKEN is required to upload to Hugging Face Hub")
+        raise HubUploadError("HF_TOKEN is required to upload to Hugging Face Hub")
     return token
 
 
@@ -27,10 +31,39 @@ def resolve_repo_id(api, repo_id: str | None) -> str:
     who = api.whoami()
     owner = who.get("name") or who.get("fullname")
     if not owner:
-        raise SystemExit("could not resolve Hugging Face username from HF_TOKEN")
+        raise HubUploadError("could not resolve Hugging Face username from HF_TOKEN")
     resolved = f"{owner}/layer-router-dpo-v1"
     print(f"HF_REPO_ID not set, using token owner -> {resolved}", file=sys.stderr)
     return resolved
+
+
+def _ensure_repo(api, target_repo: str, token: str, *, private: bool) -> None:
+    from huggingface_hub.errors import HfHubHTTPError
+
+    if api.repo_exists(repo_id=target_repo, repo_type="model", token=token):
+        return
+    try:
+        api.create_repo(
+            target_repo,
+            exist_ok=True,
+            repo_type="model",
+            private=private,
+            token=token,
+        )
+    except HfHubHTTPError as exc:
+        owner = target_repo.split("/", 1)[0]
+        me = api.whoami().get("name", "?")
+        if me == owner:
+            raise HubUploadError(
+                f"cannot create Hugging Face repo {target_repo}: {exc}\n"
+                f"HF_TOKEN for '{me}' lacks Write permission. "
+                f"Create a new token at https://huggingface.co/settings/tokens with Write access."
+            ) from exc
+        raise HubUploadError(
+            f"cannot create Hugging Face repo {target_repo}: {exc}\n"
+            f"HF_TOKEN user is '{me}' but repo namespace is '{owner}'.\n"
+            f"Use a Write token for '{owner}', or set HF_REPO_ID={me}/layer-router-dpo-v1"
+        ) from exc
 
 
 def upload_checkpoint(
@@ -48,31 +81,14 @@ def upload_checkpoint(
     adapter_dir = output_dir / "adapter"
     meta_path = output_dir / "train_meta.json"
     if not adapter_dir.is_dir():
-        raise SystemExit(f"missing adapter directory: {adapter_dir}")
+        raise HubUploadError(f"missing adapter directory: {adapter_dir}")
 
     resolved_token = _hub_token(token)
     is_private = _hub_private() if private is None else private
     api = HfApi(token=resolved_token)
     target_repo = resolve_repo_id(api, repo_id or os.getenv("HF_REPO_ID"))
 
-    if not api.repo_exists(repo_id=target_repo, repo_type="model", token=resolved_token):
-        try:
-            api.create_repo(
-                target_repo,
-                exist_ok=True,
-                repo_type="model",
-                private=is_private,
-                token=resolved_token,
-            )
-        except HfHubHTTPError as exc:
-            owner = target_repo.split("/", 1)[0]
-            who = api.whoami()
-            me = who.get("name", "?")
-            raise SystemExit(
-                f"cannot create Hugging Face repo {target_repo}: {exc}\n"
-                f"HF_TOKEN user is '{me}' but repo namespace is '{owner}'.\n"
-                f"Use a Write token for '{owner}', or set HF_REPO_ID={me}/layer-router-dpo-v1"
-            ) from exc
+    _ensure_repo(api, target_repo, resolved_token, private=is_private)
 
     meta: dict = {}
     if meta_path.is_file():
@@ -105,13 +121,20 @@ def upload_checkpoint(
             encoding="utf-8",
         )
 
-    api.upload_folder(
-        folder_path=str(output_dir),
-        repo_id=target_repo,
-        repo_type="model",
-        token=resolved_token,
-        commit_message=f"Upload router DPO checkpoint ({output_dir.name})",
-    )
+    try:
+        api.upload_folder(
+            folder_path=str(output_dir),
+            repo_id=target_repo,
+            repo_type="model",
+            token=resolved_token,
+            commit_message=f"Upload router DPO checkpoint ({output_dir.name})",
+        )
+    except HfHubHTTPError as exc:
+        raise HubUploadError(
+            f"upload to {target_repo} failed: {exc}\n"
+            "Ensure HF_TOKEN has Write permission for this repo."
+        ) from exc
+
     url = f"https://huggingface.co/{target_repo}"
     print(f"uploaded checkpoint -> {url}")
     return url
