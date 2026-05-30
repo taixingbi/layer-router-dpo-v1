@@ -79,7 +79,7 @@ fi
 
 echo "=== Run DPO training ==="
 cd "$APP_DIR"
-python -m app.main
+PYTHONUNBUFFERED=1 python -u -m app.main
 
 echo "=== Done ==="
 ls -la checkpoints/ 2>/dev/null || true
