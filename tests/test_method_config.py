@@ -40,18 +40,23 @@ def test_base_model_to_slug():
 def test_default_hf_repo_suffix_from_base_model(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("HF_REPO_MODEL", raising=False)
     monkeypatch.delenv("BASE_MODEL", raising=False)
-    assert default_hf_repo_suffix("dpo") == "router-qwen2.5-1.5b-dpo-v1"
-    assert default_hf_repo_suffix("sft") == "router-qwen2.5-1.5b-sft-v1"
+    assert default_hf_repo_suffix("dpo") == "router-qwen2.5-1.5b-dpo-0.00"
+    assert default_hf_repo_suffix("sft") == "router-qwen2.5-1.5b-sft-0.00"
 
 
 def test_default_hf_repo_suffix_base_model_override(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("HF_REPO_MODEL", raising=False)
     monkeypatch.setenv("BASE_MODEL", "Qwen/Qwen2.5-7B-Instruct")
-    assert default_hf_repo_suffix("dpo") == "router-qwen2.5-7b-dpo-v1"
+    assert default_hf_repo_suffix("dpo") == "router-qwen2.5-7b-dpo-0.00"
+
+
+def test_default_hf_repo_suffix_version_override(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("HF_REPO_VERSION", "1.01")
+    assert default_hf_repo_suffix("sft") == "router-qwen2.5-1.5b-sft-1.01"
 
 
 def test_default_hf_repo_suffix_env_override(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("HF_REPO_FEATURE", "router")
     monkeypatch.setenv("HF_REPO_MODEL", "qwen25-7b")
-    monkeypatch.setenv("HF_REPO_VERSION", "v2")
-    assert default_hf_repo_suffix("dpo") == "router-qwen25-7b-dpo-v2"
+    monkeypatch.setenv("HF_REPO_VERSION", "1.02")
+    assert default_hf_repo_suffix("dpo") == "router-qwen25-7b-dpo-1.02"

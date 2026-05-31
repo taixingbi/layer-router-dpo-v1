@@ -64,7 +64,7 @@ Push to `main` or run [`.github/workflows/deploy.yml`](.github/workflows/deploy.
 
 **Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `HF_TOKEN`
 
-**Variables:** `DEPLOY_BUCKET`, `EC2_IAM_INSTANCE_PROFILE`, `TRAIN_METHOD` (`dpo` or `sft`), `BASE_MODEL` (default `Qwen/Qwen2.5-1.5B-Instruct`), `HF_REPO_FEATURE` (default `router`), `HF_REPO_VERSION` (default `v1`), `HF_REPO_ID` (optional full override), `AUTO_TERMINATE_EC2` (default `true`)
+**Variables:** `DEPLOY_BUCKET`, `EC2_IAM_INSTANCE_PROFILE`, `TRAIN_METHOD` (`dpo` or `sft`), `BASE_MODEL` (default `Qwen/Qwen2.5-1.5B-Instruct`), `HF_REPO_FEATURE` (default `router`), `HF_REPO_VERSION` (default `0.00`; e.g. `0.01`, `1.00`), `HF_REPO_ID` (optional full override), `AUTO_TERMINATE_EC2` (default `true`)
 
 The workflow ensures a `g5.xlarge` GPU instance (`ec2-gpu-layer-router-train-v1`), syncs app + deploy files to S3, and runs `deploy/remote-deploy.sh` via SSM. After training, the LoRA adapter uploads to Hugging Face Hub (default `{user}/layer-router-{method}-v1`).
 
@@ -84,18 +84,17 @@ The workflow ensures a `g5.xlarge` GPU instance (`ec2-gpu-layer-router-train-v1`
 | `--per-device-train-batch-size` | `PER_DEVICE_TRAIN_BATCH_SIZE` |
 | `--hf-repo-id` | `HF_REPO_ID` — full Hub repo override |
 | `HF_REPO_FEATURE` | Hub repo segment (default `router`) |
-| `HF_REPO_MODEL` | Optional Hub repo slug override (default: derived from `BASE_MODEL`) |
-| `HF_REPO_VERSION` | Hub repo segment (default `v1`) |
+| `HF_REPO_VERSION` | Hub repo version segment (default `0.00`; use `0.01`, `1.00`, …) |
 | `--beta` | DPO only (`DPO_BETA`) |
 
 ## Hugging Face Hub
 
 Default Hub repos (owner = `HF_TOKEN` user, override with `HF_REPO_ID`):
 
-- DPO: `{user}/router-qwen2.5-1.5b-dpo-v1`
-- SFT: `{user}/router-qwen2.5-1.5b-sft-v1`
+- DPO: `{user}/router-qwen2.5-1.5b-dpo-0.00`
+- SFT: `{user}/router-qwen2.5-1.5b-sft-0.00`
 
-Pattern: `{HF_REPO_FEATURE}-{model-slug}-{method}-{HF_REPO_VERSION}` where `model-slug` is derived from `BASE_MODEL` (e.g. `Qwen/Qwen2.5-7B-Instruct` → `qwen2.5-7b`).
+Pattern: `{HF_REPO_FEATURE}-{model-slug}-{method}-{HF_REPO_VERSION}` where `model-slug` is derived from `BASE_MODEL` (e.g. `Qwen/Qwen2.5-7B-Instruct` → `qwen2.5-7b`). Bump `HF_REPO_VERSION` to `0.01` or `1.00` for the next release repo.
 
 GitHub Actions variables (Settings → Variables):
 
@@ -104,16 +103,18 @@ GitHub Actions variables (Settings → Variables):
 | `TRAIN_METHOD` | `sft` |
 | `BASE_MODEL` | `Qwen/Qwen2.5-7B-Instruct` |
 | `HF_REPO_FEATURE` | `router` |
-| `HF_REPO_VERSION` | `v1` |
-| `HF_REPO_ID` | `taixingbi/router-qwen2.5-1.5b-sft-v1` (optional full override) |
+| `HF_REPO_VERSION` | `0.00` or `0.01` |
+| `HF_REPO_ID` | `taixingbi/router-qwen2.5-1.5b-sft-0.00` (optional full override) |
+
+Do **not** set `HF_REPO_MODEL` in GitHub — the Hub slug is derived from `BASE_MODEL`. Delete that variable if it exists from an older setup.
 
 ```bash
 export HF_TOKEN=hf_...
 TRAIN_METHOD=sft python -m app.main
-# uploads to taixingbi/router-qwen2.5-1.5b-sft-v1
+# uploads to taixingbi/router-qwen2.5-1.5b-sft-0.00
 
-BASE_MODEL=Qwen/Qwen2.5-7B-Instruct TRAIN_METHOD=sft python -m app.main
-# uploads to taixingbi/router-qwen2.5-7b-sft-v1
+BASE_MODEL=Qwen/Qwen2.5-7B-Instruct HF_REPO_VERSION=0.01 TRAIN_METHOD=sft python -m app.main
+# uploads to taixingbi/router-qwen2.5-7b-sft-0.01
 ```
 
 ## Tests

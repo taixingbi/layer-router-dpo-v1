@@ -17,7 +17,7 @@ DATASET_SUBDIR = {
 
 DEFAULT_BASE_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 DEFAULT_HF_REPO_FEATURE = "router"
-DEFAULT_HF_REPO_VERSION = "v1"
+DEFAULT_HF_REPO_VERSION = "0.00"
 
 _BASE_MODEL_SUFFIXES = ("-instruct", "-chat", "-base")
 
@@ -92,7 +92,7 @@ def hf_repo_model(*, base_model: str | None = None) -> str:
 
 
 def hf_repo_version() -> str:
-    """Hub repo name segment: version tag (default v1). Env: HF_REPO_VERSION."""
+    """Hub repo name segment: version tag (default 0.00). Env: HF_REPO_VERSION."""
     raw = os.getenv("HF_REPO_VERSION", DEFAULT_HF_REPO_VERSION).strip()
     return raw or DEFAULT_HF_REPO_VERSION
 

@@ -75,13 +75,15 @@ if [ -n "${HF_TOKEN:-}" ]; then
   sed -i '/^HF_TOKEN=/d' "$ENV_FILE" 2>/dev/null || true
   printf 'HF_TOKEN=%s\n' "$HF_TOKEN" >> "$ENV_FILE"
 fi
-for _key in HF_REPO_ID HF_REPO_FEATURE HF_REPO_MODEL HF_REPO_VERSION TRAIN_METHOD BASE_MODEL; do
+for _key in HF_REPO_ID HF_REPO_FEATURE HF_REPO_VERSION TRAIN_METHOD BASE_MODEL; do
   _val="${!_key:-}"
   if [ -n "$_val" ]; then
     sed -i "/^${_key}=/d" "$ENV_FILE" 2>/dev/null || true
     printf '%s=%s\n' "$_key" "$_val" >> "$ENV_FILE"
   fi
 done
+# Hub slug is derived from BASE_MODEL; drop stale overrides from older deploys.
+sed -i '/^HF_REPO_MODEL=/d' "$ENV_FILE" 2>/dev/null || true
 
 echo "=== Run router training (TRAIN_METHOD=${TRAIN_METHOD:-dpo}) ==="
 cd "$APP_DIR"
