@@ -134,7 +134,7 @@ def run(args: argparse.Namespace) -> int:
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         num_train_epochs=args.num_train_epochs,
         learning_rate=args.learning_rate,
-        max_length=args.max_length,
+        max_seq_length=args.max_length,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
         save_total_limit=2,
