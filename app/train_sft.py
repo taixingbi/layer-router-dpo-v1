@@ -144,8 +144,9 @@ def run(args: argparse.Namespace) -> int:
         gradient_checkpointing=True,
         optim="paged_adamw_32bit" if not args.no_quant else "adamw_torch",
         report_to=[],
-        remove_unused_columns=False,
+        remove_unused_columns=True,
         dataset_text_field="text",
+        packing=False,
     )
 
     trainer = SFTTrainer(
