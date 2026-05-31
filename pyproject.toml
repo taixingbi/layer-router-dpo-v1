@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "layer-router-dpo-v1"
+name = "layer-router-train-v1"
 version = "0.1.0"
-description = "QLoRA DPO training for HuntAI intent router (offline GPU batch job)"
+description = "QLoRA DPO and SFT training for HuntAI intent router (offline GPU batch job)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -27,8 +27,10 @@ dependencies = [
 dev = ["pytest>=8.0"]
 
 [project.scripts]
+layer-router-train = "app.main:main"
 layer-router-dpo = "app.main:main"
 train-dpo = "app.train_dpo:main"
+train-sft = "app.train_sft:main"
 export-merge = "app.export_merge:main"
 
 [tool.setuptools.packages.find]

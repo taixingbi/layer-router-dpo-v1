@@ -4,49 +4,64 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime
 from pathlib import Path
 
-from app.env import REPO_ROOT
 from app.fetch_dataset import ensure_dataset
 from app.load_jsonl import load_jsonl
+from app.method_config import (
+    METHODS,
+    default_output_dir,
+    local_data_dir,
+    normalize_method,
+    orch_sibling_path,
+)
 
-_DEFAULT_DATA = REPO_ROOT / "data"
-_ORCH_DPO = REPO_ROOT.parent / "layer-orchestrator-v1" / "dpo-router" / "output"
 _DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 
 
-def default_output_dir() -> Path:
-    """Return a timestamped checkpoint directory under checkpoints/."""
-    ts = datetime.now().strftime("%Y%m%d-%H%M")
-    return REPO_ROOT / "checkpoints" / f"router-dpo-qwen25-1.5b-{ts}"
+def resolve_method(args: argparse.Namespace) -> str:
+    """Set args.method from CLI or env and return normalized value."""
+    method = normalize_method(getattr(args, "method", None))
+    args.method = method
+    return method
 
 
 def resolve_dataset_paths(args: argparse.Namespace) -> None:
-    """Find or download train/val JSONL (sibling repo, then GitHub → data/)."""
+    """Find or download train/val JSONL (sibling repo, then GitHub → data/{method}/)."""
+    method = resolve_method(args)
+    data_dir = local_data_dir(method)
+    default_train = (data_dir / "train.jsonl").resolve()
+    default_val = (data_dir / "val.jsonl").resolve()
+
     args.train_jsonl = Path(args.train_jsonl).expanduser().resolve()
     if args.val_jsonl:
         args.val_jsonl = Path(args.val_jsonl).expanduser().resolve()
 
+    for other in METHODS:
+        if other == method:
+            continue
+        other_dir = local_data_dir(other).resolve()
+        if other_dir in args.train_jsonl.parents:
+            args.train_jsonl = default_train
+            args.val_jsonl = default_val
+            break
+
     if args.train_jsonl.is_file():
         return
 
-    orch_train = (_ORCH_DPO / "train.jsonl").resolve()
+    orch_train = (orch_sibling_path(method) / "train.jsonl").resolve()
     if orch_train.is_file():
         print(f"using orchestrator dataset: {orch_train.parent}", file=sys.stderr)
         args.train_jsonl = orch_train
-        orch_val = (_ORCH_DPO / "val.jsonl").resolve()
+        orch_val = (orch_sibling_path(method) / "val.jsonl").resolve()
         args.val_jsonl = orch_val if orch_val.is_file() else None
         return
 
-    default_train = (_DEFAULT_DATA / "train.jsonl").resolve()
-    default_data = _DEFAULT_DATA.resolve()
-    if args.train_jsonl == default_train or default_data in args.train_jsonl.parents:
-        print("fetch dataset from GitHub → data/", file=sys.stderr)
-        ensure_dataset(_DEFAULT_DATA)
+    if args.train_jsonl == default_train or data_dir.resolve() in args.train_jsonl.parents:
+        print(f"fetch dataset from GitHub → {data_dir}/", file=sys.stderr)
+        ensure_dataset(data_dir, method=method)
         args.train_jsonl = default_train
-        val_path = (_DEFAULT_DATA / "val.jsonl").resolve()
-        args.val_jsonl = val_path if val_path.is_file() else None
+        args.val_jsonl = default_val if default_val.is_file() else None
 
 
 def summarize_dataset(args: argparse.Namespace) -> None:
@@ -72,8 +87,14 @@ def prepare_training(args: argparse.Namespace) -> None:
 
 def run_training(args: argparse.Namespace) -> int:
     """Run the full fetch → load → train pipeline."""
-    from app.train_dpo import run as train_run
-
+    method = resolve_method(args)
     prepare_training(args)
-    print("train: starting DPO", file=sys.stderr)
+    print(f"train: starting {method.upper()}", file=sys.stderr)
+    if method == "sft":
+        from app.train_sft import run as train_run
+    else:
+        from app.train_dpo import run as train_run
     return train_run(args)
+
+
+__all__ = ["default_output_dir", "run_training", "prepare_training", "resolve_method"]

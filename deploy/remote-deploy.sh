@@ -4,8 +4,8 @@
 set -euo pipefail
 
 DEPLOY_DIR="${DEPLOY_DIR:-/home/ubuntu/deploy}"
-APP_DIR="${APP_DIR:-/home/ubuntu/layer-router-dpo-v1}"
-DEPLOY_LOG="/tmp/router-dpo-deploy.log"
+APP_DIR="${APP_DIR:-/home/ubuntu/layer-router-train-v1}"
+DEPLOY_LOG="/tmp/router-train-deploy.log"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -79,8 +79,12 @@ sed -i '/^HF_REPO_ID=/d' "$ENV_FILE" 2>/dev/null || true
 if [ -n "${HF_REPO_ID:-}" ]; then
   printf 'HF_REPO_ID=%s\n' "$HF_REPO_ID" >> "$ENV_FILE"
 fi
+sed -i '/^TRAIN_METHOD=/d' "$ENV_FILE" 2>/dev/null || true
+if [ -n "${TRAIN_METHOD:-}" ]; then
+  printf 'TRAIN_METHOD=%s\n' "$TRAIN_METHOD" >> "$ENV_FILE"
+fi
 
-echo "=== Run DPO training ==="
+echo "=== Run router training (TRAIN_METHOD=${TRAIN_METHOD:-dpo}) ==="
 cd "$APP_DIR"
 PYTHONUNBUFFERED=1 python -u -m app.main
 

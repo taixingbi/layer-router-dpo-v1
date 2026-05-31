@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified CLI: end-to-end train (fetch → load → DPO) and merge adapter."""
+"""Unified CLI: end-to-end train (fetch → load → DPO/SFT) and merge adapter."""
 
 from __future__ import annotations
 
@@ -9,9 +9,11 @@ import sys
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
-from app.env import REPO_ROOT, load_dotenv
-from app.pipeline import _DEFAULT_MODEL, default_output_dir, run_training
+from app.env import load_dotenv
+from app.method_config import local_data_dir, normalize_method
+from app.pipeline import default_output_dir, run_training
 
+_DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 _DEFAULT_MAX_LENGTH = 1024
 _DEFAULT_GRAD_ACCUM = 8
 _DEFAULT_EPOCHS = 2
@@ -25,28 +27,35 @@ def _env_path(name: str, default: Path) -> Path:
 
 def _add_train_parser(sub: argparse._SubParsersAction) -> None:
     """Register the train subcommand parser."""
-    from app.pipeline import _DEFAULT_DATA
+    default_method = normalize_method(os.getenv("TRAIN_METHOD"))
+    data_dir = local_data_dir(default_method)
 
     p = sub.add_parser(
         "train",
-        help="End-to-end: fetch dataset (if needed), load JSONL, QLoRA DPO train",
+        help="End-to-end: fetch dataset (if needed), load JSONL, QLoRA DPO or SFT train",
+    )
+    p.add_argument(
+        "--method",
+        choices=("dpo", "sft"),
+        default=default_method,
+        help="Training method (default: TRAIN_METHOD env or dpo)",
     )
     p.add_argument(
         "--train-jsonl",
         type=Path,
-        default=_env_path("TRAIN_JSONL", _DEFAULT_DATA / "train.jsonl"),
+        default=_env_path("TRAIN_JSONL", data_dir / "train.jsonl"),
     )
     p.add_argument(
         "--val-jsonl",
         type=Path,
-        default=_env_path("VAL_JSONL", _DEFAULT_DATA / "val.jsonl"),
+        default=_env_path("VAL_JSONL", data_dir / "val.jsonl"),
     )
     p.add_argument("--base-model", default=os.getenv("BASE_MODEL", _DEFAULT_MODEL))
     p.add_argument(
         "--output-dir",
         type=Path,
         default=None,
-        help="Checkpoint root (default: checkpoints/router-dpo-qwen25-1.5b-<timestamp>/)",
+        help="Checkpoint root (default: checkpoints/router-{method}-qwen25-1.5b-<timestamp>/)",
     )
     p.add_argument(
         "--max-length",
@@ -68,7 +77,12 @@ def _add_train_parser(sub: argparse._SubParsersAction) -> None:
         type=int,
         default=int(os.getenv("GRAD_ACCUM", str(_DEFAULT_GRAD_ACCUM))),
     )
-    p.add_argument("--learning-rate", type=float, default=float(os.getenv("LEARNING_RATE", "5e-5")))
+    p.add_argument(
+        "--learning-rate",
+        type=float,
+        default=None,
+        help="Default: 5e-5 for DPO, 2e-4 for SFT (or LEARNING_RATE env)",
+    )
     p.add_argument("--beta", type=float, default=float(os.getenv("DPO_BETA", "0.1")))
     p.add_argument("--lora-r", type=int, default=int(os.getenv("LORA_R", "32")))
     p.add_argument("--lora-alpha", type=int, default=int(os.getenv("LORA_ALPHA", "64")))
@@ -80,7 +94,7 @@ def _add_train_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--hf-repo-id",
         default=os.getenv("HF_REPO_ID"),
-        help="Hugging Face model repo (default: {HF_TOKEN user}/layer-router-dpo-v1)",
+        help="Hugging Face model repo (default: {HF_TOKEN user}/layer-router-{method}-v1)",
     )
     p.add_argument("--no-hf-upload", action="store_true", help="Skip Hugging Face Hub upload")
     p.set_defaults(_handler=_cmd_train)
@@ -109,8 +123,8 @@ def _normalize_argv(argv: Optional[Sequence[str]]) -> list[str]:
 def _build_parser() -> argparse.ArgumentParser:
     """Build the top-level CLI with train and merge subcommands."""
     parser = argparse.ArgumentParser(
-        prog="layer-router-dpo",
-        description="Router DPO: fetch → load → train (default), or merge adapter for deploy.",
+        prog="layer-router-train",
+        description="Router train: fetch → load → DPO or SFT (default), or merge adapter for deploy.",
     )
     sub = parser.add_subparsers(dest="command")
     _add_train_parser(sub)
@@ -118,10 +132,23 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _apply_learning_rate_defaults(args: argparse.Namespace) -> None:
+    """Set method-appropriate learning rate when not provided."""
+    if args.learning_rate is not None:
+        return
+    env_lr = os.getenv("LEARNING_RATE")
+    if env_lr:
+        args.learning_rate = float(env_lr)
+        return
+    args.learning_rate = 2e-4 if normalize_method(args.method) == "sft" else 5e-5
+
+
 def _cmd_train(args: argparse.Namespace) -> int:
     """Run fetch → load → train pipeline."""
+    args.method = normalize_method(args.method)
+    _apply_learning_rate_defaults(args)
     if args.output_dir is None:
-        args.output_dir = default_output_dir()
+        args.output_dir = default_output_dir(args.method)
     print(f"output-dir: {args.output_dir}", file=sys.stderr)
     return run_training(args)
 
@@ -134,7 +161,7 @@ def _cmd_merge(args: argparse.Namespace) -> int:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    """Entry point for python -m app.main and the layer-router-dpo console script."""
+    """Entry point for python -m app.main and the layer-router-train console script."""
     load_dotenv()
     parser = _build_parser()
     args = parser.parse_args(_normalize_argv(argv))

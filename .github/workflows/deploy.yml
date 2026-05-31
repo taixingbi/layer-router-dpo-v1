@@ -1,4 +1,4 @@
-name: Deploy DPO training to EC2 GPU
+name: Deploy router training to EC2 GPU
 
 on:
   push:
@@ -10,7 +10,7 @@ env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
 
 concurrency:
-  group: deploy-layer-router-dpo-${{ github.ref }}
+  group: deploy-layer-router-train-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -78,8 +78,8 @@ jobs:
             fi
           fi
 
-          INSTANCE_NAME="ec2-gpu-layer-router-dpo-v1"
-          EIP_TAG="ec2-gpu-layer-router-dpo-v1-eip"
+          INSTANCE_NAME="ec2-gpu-layer-router-train-v1"
+          EIP_TAG="ec2-gpu-layer-router-train-v1-eip"
           echo "Looking for running instance with tag Name=$INSTANCE_NAME..."
           EXISTING_ID=$(aws ec2 describe-instances \
             --filters "Name=tag:Name,Values=$INSTANCE_NAME" "Name=instance-state-name,Values=running" \
@@ -197,6 +197,7 @@ jobs:
           INSTANCE_ID: ${{ needs.ensure-instance.outputs.instance_id }}
           DEPLOY_BUCKET: ${{ vars.DEPLOY_BUCKET }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          TRAIN_METHOD: ${{ vars.TRAIN_METHOD || 'dpo' }}
           AUTO_TERMINATE_EC2: ${{ vars.AUTO_TERMINATE_EC2 || 'true' }}
           AWS_REGION: ${{ env.AWS_REGION }}
         run: |
@@ -212,9 +213,9 @@ jobs:
           HF_ESC=$(printf '%s' "$HF_TOKEN" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
           EXPORT_CMD="export HF_TOKEN=\"$HF_ESC\""
           DEPLOY_DIR="/home/ubuntu/deploy"
-          APP_DIR="/home/ubuntu/layer-router-dpo-v1"
-          COMMANDS=$(jq -n --arg e "$EXPORT_CMD" --arg b "$DEPLOY_BUCKET" --arg d "$DEPLOY_DIR" --arg a "$APP_DIR" \
-            '["set -e", $e, "mkdir -p " + $d + " " + $a,
+          APP_DIR="/home/ubuntu/layer-router-train-v1"
+          COMMANDS=$(jq -n --arg e "$EXPORT_CMD" --arg m "$TRAIN_METHOD" --arg b "$DEPLOY_BUCKET" --arg d "$DEPLOY_DIR" --arg a "$APP_DIR" \
+            '["set -e", $e, "export TRAIN_METHOD=" + ($m | @sh), "mkdir -p " + $d + " " + $a,
               ("aws s3 cp s3://" + $b + "/deploy/ " + $d + "/ --recursive"),
               ("rm -rf " + $a + "/.venv " + $a + "/venv"),
               ("aws s3 sync s3://" + $b + "/app/ " + $a + "/ --delete --exclude \".venv/*\" --exclude \".venv-*/*\" --exclude \"venv/*\" --exclude \"data/*\" --exclude \"checkpoints/*\" --exclude \".env\" --exclude \"*.egg-info/*\""),
@@ -230,7 +231,7 @@ jobs:
             --output text \
             --query 'Command.CommandId')
 
-          DEPLOY_LOG="/tmp/router-dpo-deploy.log"
+          DEPLOY_LOG="/tmp/router-train-deploy.log"
           echo "Waiting for SSM command to complete (up to 4 hours)..."
           echo "Live logs: polling $DEPLOY_LOG on EC2 every 15s"
           LAST_LOG_BYTES=0

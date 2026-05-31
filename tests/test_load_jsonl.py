@@ -10,7 +10,8 @@ import pytest
 from app import load_jsonl as lj
 
 APP_ROOT = Path(__file__).resolve().parents[1]
-ORCH_DPO = APP_ROOT.parent / "layer-orchestrator-v1" / "dpo-router"
+ORCH_DPO = APP_ROOT.parent / "layer-orchestrator-v1" / "aval" / "dpo-router"
+ORCH_SFT = APP_ROOT.parent / "layer-orchestrator-v1" / "aval" / "sft-router"
 
 SAMPLE_RECORD = {
     "prompt": [
@@ -39,6 +40,27 @@ SAMPLE_RECORD = {
         },
         separators=(",", ":"),
     ),
+}
+
+SAMPLE_SFT_RECORD = {
+    "messages": [
+        {"role": "system", "content": "You are the router."},
+        {"role": "user", "content": "History:\n(none)\n\nLatest question:\nHi?"},
+        {
+            "role": "assistant",
+            "content": json.dumps(
+                {
+                    "rewritten_question": "Hi?",
+                    "route": "greeting",
+                    "confidence": 0.95,
+                    "reason": "gold",
+                    "static_answer": "Hello",
+                    "repo": None,
+                },
+                separators=(",", ":"),
+            ),
+        },
+    ],
 }
 
 
@@ -74,6 +96,15 @@ def test_records_to_dpo_rows():
     assert "help" in row["rejected"]
 
 
+def test_records_to_sft_rows():
+    """SFT rows render full chat text including assistant route JSON."""
+    tok = _MockTokenizer()
+    rows = lj.records_to_sft_rows([SAMPLE_SFT_RECORD], tokenizer=tok)
+    assert len(rows) == 1
+    assert "greeting" in rows[0]["text"]
+    assert "assistant:" in rows[0]["text"]
+
+
 def test_load_dpo_dataset_from_output(tmp_path):
     """Load a single-record train file with no validation split."""
     train_path = tmp_path / "train.jsonl"
@@ -84,17 +115,43 @@ def test_load_dpo_dataset_from_output(tmp_path):
     assert val_rows is None
 
 
+def test_load_sft_dataset_from_output(tmp_path):
+    """Load a single-record SFT train file."""
+    train_path = tmp_path / "train.jsonl"
+    train_path.write_text(json.dumps(SAMPLE_SFT_RECORD) + "\n", encoding="utf-8")
+    tok = _MockTokenizer()
+    train_rows, val_rows = lj.load_sft_dataset(train_path, None, tokenizer=tok)
+    assert len(train_rows) == 1
+    assert val_rows is None
+
+
 @pytest.mark.skipif(
     not (ORCH_DPO / "output" / "train.jsonl").is_file(),
-    reason="run layer-orchestrator-v1 dpo-router/run-build-dpo.sh first",
+    reason="run layer-orchestrator-v1 aval/dpo-router build first",
 )
-def test_load_production_train_jsonl():
-    """Smoke-test real orchestrator JSONL when the sibling repo is present."""
+def test_load_production_dpo_jsonl():
+    """Smoke-test real orchestrator DPO JSONL when the sibling repo is present."""
     from transformers import AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", trust_remote_code=True)
     train_path = ORCH_DPO / "output" / "train.jsonl"
     val_path = ORCH_DPO / "output" / "val.jsonl"
     train_rows, val_rows = lj.load_dpo_dataset(train_path, val_path, tokenizer=tok)
+    assert len(train_rows) >= 10
+    assert val_rows is None or len(val_rows) >= 1
+
+
+@pytest.mark.skipif(
+    not (ORCH_SFT / "output" / "train.jsonl").is_file(),
+    reason="run layer-orchestrator-v1 aval/sft-router build first",
+)
+def test_load_production_sft_jsonl():
+    """Smoke-test real orchestrator SFT JSONL when the sibling repo is present."""
+    from transformers import AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", trust_remote_code=True)
+    train_path = ORCH_SFT / "output" / "train.jsonl"
+    val_path = ORCH_SFT / "output" / "val.jsonl"
+    train_rows, val_rows = lj.load_sft_dataset(train_path, val_path, tokenizer=tok)
     assert len(train_rows) >= 10
     assert val_rows is None or len(val_rows) >= 1

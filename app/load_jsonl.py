@@ -1,4 +1,4 @@
-"""Load router DPO JSONL produced by build_from_gold.py into TRL-ready rows."""
+"""Load router DPO/SFT JSONL from layer-orchestrator-v1 into TRL-ready rows."""
 
 from __future__ import annotations
 
@@ -99,4 +99,49 @@ def load_dpo_dataset(
         val_records = load_jsonl(val_path)
         if val_records:
             val_rows = records_to_dpo_rows(val_records, tokenizer=tokenizer)
+    return train_rows, val_rows
+
+
+def _record_to_sft_row(rec: Dict[str, Any], *, tokenizer: Any) -> Dict[str, str]:
+    """Map one SFT record to {text} via chat template."""
+    messages = rec.get("messages")
+    if not isinstance(messages, list) or len(messages) < 2:
+        raise ValueError("record missing messages")
+    if not any(m.get("role") == "assistant" for m in messages if isinstance(m, dict)):
+        raise ValueError("record missing assistant turn")
+    if not tokenizer.chat_template:
+        raise ValueError("Tokenizer has no chat_template; use a Qwen instruct checkpoint.")
+    for turn in messages:
+        if isinstance(turn, dict) and turn.get("role") == "assistant":
+            json.loads(turn.get("content", ""))
+    text = tokenizer.apply_chat_template(
+        list(messages),
+        tokenize=False,
+        add_generation_prompt=False,
+    )
+    return {"text": text}
+
+
+def records_to_sft_rows(
+    records: Sequence[Dict[str, Any]],
+    *,
+    tokenizer: Any,
+) -> List[Dict[str, str]]:
+    """Map SFT JSONL records to {text} rows for SFTTrainer."""
+    return [_record_to_sft_row(rec, tokenizer=tokenizer) for rec in records]
+
+
+def load_sft_dataset(
+    train_path: Path,
+    val_path: Optional[Path],
+    *,
+    tokenizer: Any,
+) -> tuple[List[Dict[str, str]], Optional[List[Dict[str, str]]]]:
+    """Load train (and optional val) JSONL paths into TRL SFT rows."""
+    train_rows = records_to_sft_rows(load_jsonl(train_path), tokenizer=tokenizer)
+    val_rows: Optional[List[Dict[str, str]]] = None
+    if val_path and val_path.is_file():
+        val_records = load_jsonl(val_path)
+        if val_records:
+            val_rows = records_to_sft_rows(val_records, tokenizer=tokenizer)
     return train_rows, val_rows

@@ -1,1 +1,1 @@
-"""Router DPO training application (train, merge)."""
+"""Router DPO/SFT training application (train, merge)."""

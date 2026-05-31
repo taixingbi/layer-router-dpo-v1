@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 
+from app.method_config import default_hf_repo_suffix, normalize_method
+
 
 class HubUploadError(RuntimeError):
     """Raised when checkpoint upload to Hugging Face Hub fails."""
@@ -24,20 +26,22 @@ def _hub_private() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
-def resolve_repo_id(api, repo_id: str | None) -> str:
-    """Use HF_REPO_ID when set, otherwise {token_owner}/layer-router-dpo-v1."""
+def resolve_repo_id(api, repo_id: str | None, *, method: str = "dpo") -> str:
+    """Use HF_REPO_ID when set, otherwise {token_owner}/layer-router-{method}-v1."""
     if repo_id and repo_id.strip():
         return repo_id.strip()
+    method = normalize_method(method)
+    suffix = default_hf_repo_suffix(method)
     who = api.whoami()
     owner = who.get("name") or who.get("fullname")
     if not owner:
         raise HubUploadError("could not resolve Hugging Face username from HF_TOKEN")
-    resolved = f"{owner}/layer-router-dpo-v1"
+    resolved = f"{owner}/{suffix}"
     print(f"HF_REPO_ID not set, using token owner -> {resolved}", file=sys.stderr)
     return resolved
 
 
-def _ensure_repo(api, target_repo: str, token: str, *, private: bool) -> None:
+def _ensure_repo(api, target_repo: str, token: str, *, private: bool, method: str) -> None:
     from huggingface_hub.errors import HfHubHTTPError
 
     if api.repo_exists(repo_id=target_repo, repo_type="model", token=token):
@@ -53,6 +57,7 @@ def _ensure_repo(api, target_repo: str, token: str, *, private: bool) -> None:
     except HfHubHTTPError as exc:
         owner = target_repo.split("/", 1)[0]
         me = api.whoami().get("name", "?")
+        suffix = default_hf_repo_suffix(method)
         if me == owner:
             raise HubUploadError(
                 f"cannot create Hugging Face repo {target_repo}: {exc}\n"
@@ -62,7 +67,7 @@ def _ensure_repo(api, target_repo: str, token: str, *, private: bool) -> None:
         raise HubUploadError(
             f"cannot create Hugging Face repo {target_repo}: {exc}\n"
             f"HF_TOKEN user is '{me}' but repo namespace is '{owner}'.\n"
-            f"Use a Write token for '{owner}', or set HF_REPO_ID={me}/layer-router-dpo-v1"
+            f"Use a Write token for '{owner}', or set HF_REPO_ID={me}/{suffix}"
         ) from exc
 
 
@@ -72,11 +77,13 @@ def upload_checkpoint(
     *,
     token: str | None = None,
     private: bool | None = None,
+    method: str = "dpo",
 ) -> str:
     """Upload adapter + train_meta.json to a Hugging Face model repo."""
     from huggingface_hub import HfApi
     from huggingface_hub.errors import HfHubHTTPError
 
+    method = normalize_method(method)
     output_dir = output_dir.resolve()
     adapter_dir = output_dir / "adapter"
     meta_path = output_dir / "train_meta.json"
@@ -86,19 +93,21 @@ def upload_checkpoint(
     resolved_token = _hub_token(token)
     is_private = _hub_private() if private is None else private
     api = HfApi(token=resolved_token)
-    target_repo = resolve_repo_id(api, repo_id or os.getenv("HF_REPO_ID"))
+    target_repo = resolve_repo_id(api, repo_id or os.getenv("HF_REPO_ID"), method=method)
 
-    _ensure_repo(api, target_repo, resolved_token, private=is_private)
+    _ensure_repo(api, target_repo, resolved_token, private=is_private, method=method)
 
     meta: dict = {}
     if meta_path.is_file():
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
     meta["hf_repo_id"] = target_repo
+    meta["method"] = method
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
     readme_path = output_dir / "README.md"
     if not readme_path.is_file():
         base_model = meta.get("base_model", "unknown")
+        train_label = method.upper()
         readme_path.write_text(
             "\n".join(
                 [
@@ -110,7 +119,7 @@ def upload_checkpoint(
                     "",
                     f"# {target_repo}",
                     "",
-                    "LoRA adapter from HuntAI router DPO training (`layer-router-dpo-v1`).",
+                    f"LoRA adapter from HuntAI router {train_label} training (`layer-router-train-v1`).",
                     "",
                     f"Base model: `{base_model}`",
                     "",
@@ -127,7 +136,7 @@ def upload_checkpoint(
             repo_id=target_repo,
             repo_type="model",
             token=resolved_token,
-            commit_message=f"Upload router DPO checkpoint ({output_dir.name})",
+            commit_message=f"Upload router {method.upper()} checkpoint ({output_dir.name})",
         )
     except HfHubHTTPError as exc:
         raise HubUploadError(
