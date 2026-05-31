@@ -15,9 +15,24 @@ DATASET_SUBDIR = {
     "sft": "aval/sft-router/output",
 }
 
+DEFAULT_BASE_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 DEFAULT_HF_REPO_FEATURE = "router"
-DEFAULT_HF_REPO_MODEL = "qwen25-1.5b"
 DEFAULT_HF_REPO_VERSION = "v1"
+
+_BASE_MODEL_SUFFIXES = ("-instruct", "-chat", "-base")
+
+
+def base_model_to_slug(base_model: str) -> str:
+    """Derive a Hub/checkpoint slug from a HuggingFace model id."""
+    name = base_model.strip().rsplit("/", 1)[-1].lower()
+    for suffix in _BASE_MODEL_SUFFIXES:
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    return name or "model"
+
+
+DEFAULT_HF_REPO_MODEL = base_model_to_slug(DEFAULT_BASE_MODEL)
 
 _ORCH_ROOT = REPO_ROOT.parent / "layer-orchestrator-v1"
 
@@ -41,11 +56,12 @@ def orch_sibling_path(method: str) -> Path:
     return _ORCH_ROOT / DATASET_SUBDIR[method]
 
 
-def default_output_dir(method: str) -> Path:
+def default_output_dir(method: str, *, base_model: str | None = None) -> Path:
     """Timestamped checkpoint directory under checkpoints/."""
     method = normalize_method(method)
     ts = datetime.now().strftime("%Y%m%d-%H%M")
-    return REPO_ROOT / "checkpoints" / f"router-{method}-qwen25-1.5b-{ts}"
+    slug = hf_repo_model(base_model=base_model)
+    return REPO_ROOT / "checkpoints" / f"router-{method}-{slug}-{ts}"
 
 
 def dataset_subdir(method: str) -> str:
@@ -66,10 +82,13 @@ def hf_repo_feature() -> str:
     return raw or DEFAULT_HF_REPO_FEATURE
 
 
-def hf_repo_model() -> str:
-    """Hub repo name segment: model slug (default qwen25-1.5b). Env: HF_REPO_MODEL."""
-    raw = os.getenv("HF_REPO_MODEL", DEFAULT_HF_REPO_MODEL).strip()
-    return raw or DEFAULT_HF_REPO_MODEL
+def hf_repo_model(*, base_model: str | None = None) -> str:
+    """Hub repo model segment: derived from BASE_MODEL unless HF_REPO_MODEL is set."""
+    explicit = os.getenv("HF_REPO_MODEL", "").strip()
+    if explicit:
+        return explicit
+    raw = (base_model or os.getenv("BASE_MODEL") or DEFAULT_BASE_MODEL).strip()
+    return base_model_to_slug(raw) if raw else DEFAULT_HF_REPO_MODEL
 
 
 def hf_repo_version() -> str:
@@ -78,7 +97,7 @@ def hf_repo_version() -> str:
     return raw or DEFAULT_HF_REPO_VERSION
 
 
-def default_hf_repo_suffix(method: str) -> str:
+def default_hf_repo_suffix(method: str, *, base_model: str | None = None) -> str:
     """Default Hub repo suffix: {feature}-{model}-{method}-{version}."""
     method = normalize_method(method)
-    return f"{hf_repo_feature()}-{hf_repo_model()}-{method}-{hf_repo_version()}"
+    return f"{hf_repo_feature()}-{hf_repo_model(base_model=base_model)}-{method}-{hf_repo_version()}"

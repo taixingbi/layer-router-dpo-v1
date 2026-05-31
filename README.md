@@ -52,7 +52,7 @@ python -m app.main --method sft
 TRAIN_METHOD=sft python -m app.main
 ```
 
-One command: **fetch** JSONL (if missing) → **load** / validate counts → **train**. Defaults: `Qwen/Qwen2.5-1.5B-Instruct`, `max-length=1024`, output under `checkpoints/router-{method}-qwen25-1.5b-<timestamp>/`.
+One command: **fetch** JSONL (if missing) → **load** / validate counts → **train**. Defaults: `Qwen/Qwen2.5-1.5B-Instruct`, `max-length=1024`, output under `checkpoints/router-{method}-qwen2.5-1.5b-<timestamp>/`.
 
 After `pip install -e .`, run `layer-router-train` (alias: `layer-router-dpo`).
 
@@ -64,7 +64,7 @@ Push to `main` or run [`.github/workflows/deploy.yml`](.github/workflows/deploy.
 
 **Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `HF_TOKEN`
 
-**Variables:** `DEPLOY_BUCKET`, `EC2_IAM_INSTANCE_PROFILE`, `TRAIN_METHOD` (`dpo` or `sft`), `HF_REPO_FEATURE` (default `router`), `HF_REPO_MODEL` (default `qwen25-1.5b`), `HF_REPO_VERSION` (default `v1`), `HF_REPO_ID` (optional full override), `AUTO_TERMINATE_EC2` (default `true`)
+**Variables:** `DEPLOY_BUCKET`, `EC2_IAM_INSTANCE_PROFILE`, `TRAIN_METHOD` (`dpo` or `sft`), `BASE_MODEL` (default `Qwen/Qwen2.5-1.5B-Instruct`), `HF_REPO_FEATURE` (default `router`), `HF_REPO_VERSION` (default `v1`), `HF_REPO_ID` (optional full override), `AUTO_TERMINATE_EC2` (default `true`)
 
 The workflow ensures a `g5.xlarge` GPU instance (`ec2-gpu-layer-router-train-v1`), syncs app + deploy files to S3, and runs `deploy/remote-deploy.sh` via SSM. After training, the LoRA adapter uploads to Hugging Face Hub (default `{user}/layer-router-{method}-v1`).
 
@@ -76,7 +76,7 @@ The workflow ensures a `g5.xlarge` GPU instance (`ec2-gpu-layer-router-train-v1`
 |------------|---------|
 | `--method` / `TRAIN_METHOD` | `dpo` or `sft` (default `dpo`) |
 | `--train-jsonl`, `--val-jsonl` | Dataset paths (default `./data/{method}/*.jsonl`) |
-| `--base-model` | HuggingFace id (`BASE_MODEL`) |
+| `--base-model` | HuggingFace id (`BASE_MODEL`); also drives Hub repo model slug |
 | `--output-dir` | Checkpoint root (default auto timestamp under `checkpoints/`) |
 | `--max-length` | `MAX_LENGTH` |
 | `--num-train-epochs` | `NUM_TRAIN_EPOCHS` |
@@ -84,7 +84,7 @@ The workflow ensures a `g5.xlarge` GPU instance (`ec2-gpu-layer-router-train-v1`
 | `--per-device-train-batch-size` | `PER_DEVICE_TRAIN_BATCH_SIZE` |
 | `--hf-repo-id` | `HF_REPO_ID` — full Hub repo override |
 | `HF_REPO_FEATURE` | Hub repo segment (default `router`) |
-| `HF_REPO_MODEL` | Hub repo segment (default `qwen25-1.5b`) |
+| `HF_REPO_MODEL` | Optional Hub repo slug override (default: derived from `BASE_MODEL`) |
 | `HF_REPO_VERSION` | Hub repo segment (default `v1`) |
 | `--beta` | DPO only (`DPO_BETA`) |
 
@@ -92,25 +92,28 @@ The workflow ensures a `g5.xlarge` GPU instance (`ec2-gpu-layer-router-train-v1`
 
 Default Hub repos (owner = `HF_TOKEN` user, override with `HF_REPO_ID`):
 
-- DPO: `{user}/router-qwen25-1.5b-dpo-v1`
-- SFT: `{user}/router-qwen25-1.5b-sft-v1`
+- DPO: `{user}/router-qwen2.5-1.5b-dpo-v1`
+- SFT: `{user}/router-qwen2.5-1.5b-sft-v1`
 
-Pattern: `{HF_REPO_FEATURE}-{HF_REPO_MODEL}-{method}-{HF_REPO_VERSION}`
+Pattern: `{HF_REPO_FEATURE}-{model-slug}-{method}-{HF_REPO_VERSION}` where `model-slug` is derived from `BASE_MODEL` (e.g. `Qwen/Qwen2.5-7B-Instruct` → `qwen2.5-7b`).
 
 GitHub Actions variables (Settings → Variables):
 
 | Variable | Example |
 |----------|---------|
 | `TRAIN_METHOD` | `sft` |
+| `BASE_MODEL` | `Qwen/Qwen2.5-7B-Instruct` |
 | `HF_REPO_FEATURE` | `router` |
-| `HF_REPO_MODEL` | `qwen25-1.5b` |
 | `HF_REPO_VERSION` | `v1` |
-| `HF_REPO_ID` | `taixingbi/router-qwen25-1.5b-sft-v1` (optional full override) |
+| `HF_REPO_ID` | `taixingbi/router-qwen2.5-1.5b-sft-v1` (optional full override) |
 
 ```bash
 export HF_TOKEN=hf_...
 TRAIN_METHOD=sft python -m app.main
-# uploads to taixingbi/router-qwen25-1.5b-sft-v1
+# uploads to taixingbi/router-qwen2.5-1.5b-sft-v1
+
+BASE_MODEL=Qwen/Qwen2.5-7B-Instruct TRAIN_METHOD=sft python -m app.main
+# uploads to taixingbi/router-qwen2.5-7b-sft-v1
 ```
 
 ## Tests

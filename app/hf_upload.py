@@ -26,12 +26,18 @@ def _hub_private() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
-def resolve_repo_id(api, repo_id: str | None, *, method: str = "dpo") -> str:
+def resolve_repo_id(
+    api,
+    repo_id: str | None,
+    *,
+    method: str = "dpo",
+    base_model: str | None = None,
+) -> str:
     """Use HF_REPO_ID when set, else {token_owner}/{feature}-{model}-{method}-{version}."""
     if repo_id and repo_id.strip():
         return repo_id.strip()
     method = normalize_method(method)
-    suffix = default_hf_repo_suffix(method)
+    suffix = default_hf_repo_suffix(method, base_model=base_model)
     who = api.whoami()
     owner = who.get("name") or who.get("fullname")
     if not owner:
@@ -41,7 +47,15 @@ def resolve_repo_id(api, repo_id: str | None, *, method: str = "dpo") -> str:
     return resolved
 
 
-def _ensure_repo(api, target_repo: str, token: str, *, private: bool, method: str) -> None:
+def _ensure_repo(
+    api,
+    target_repo: str,
+    token: str,
+    *,
+    private: bool,
+    method: str,
+    base_model: str | None = None,
+) -> None:
     from huggingface_hub.errors import HfHubHTTPError
 
     if api.repo_exists(repo_id=target_repo, repo_type="model", token=token):
@@ -57,7 +71,7 @@ def _ensure_repo(api, target_repo: str, token: str, *, private: bool, method: st
     except HfHubHTTPError as exc:
         owner = target_repo.split("/", 1)[0]
         me = api.whoami().get("name", "?")
-        suffix = default_hf_repo_suffix(method)
+        suffix = default_hf_repo_suffix(method, base_model=base_model)
         if me == owner:
             raise HubUploadError(
                 f"cannot create Hugging Face repo {target_repo}: {exc}\n"
@@ -90,16 +104,30 @@ def upload_checkpoint(
     if not adapter_dir.is_dir():
         raise HubUploadError(f"missing adapter directory: {adapter_dir}")
 
-    resolved_token = _hub_token(token)
-    is_private = _hub_private() if private is None else private
-    api = HfApi(token=resolved_token)
-    target_repo = resolve_repo_id(api, repo_id or os.getenv("HF_REPO_ID"), method=method)
-
-    _ensure_repo(api, target_repo, resolved_token, private=is_private, method=method)
-
     meta: dict = {}
     if meta_path.is_file():
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    base_model = meta.get("base_model")
+
+    resolved_token = _hub_token(token)
+    is_private = _hub_private() if private is None else private
+    api = HfApi(token=resolved_token)
+    target_repo = resolve_repo_id(
+        api,
+        repo_id or os.getenv("HF_REPO_ID"),
+        method=method,
+        base_model=base_model,
+    )
+
+    _ensure_repo(
+        api,
+        target_repo,
+        resolved_token,
+        private=is_private,
+        method=method,
+        base_model=base_model,
+    )
+
     meta["hf_repo_id"] = target_repo
     meta["method"] = method
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")

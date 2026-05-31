@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Callable, Optional, Sequence
 
 from app.env import load_dotenv
-from app.method_config import local_data_dir, normalize_method
+from app.method_config import DEFAULT_BASE_MODEL, local_data_dir, normalize_method
 from app.pipeline import default_output_dir, run_training
 
-_DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
+_DEFAULT_MODEL = DEFAULT_BASE_MODEL
 _DEFAULT_MAX_LENGTH = 1024
 _DEFAULT_GRAD_ACCUM = 8
 _DEFAULT_EPOCHS = 2
@@ -55,7 +55,7 @@ def _add_train_parser(sub: argparse._SubParsersAction) -> None:
         "--output-dir",
         type=Path,
         default=None,
-        help="Checkpoint root (default: checkpoints/router-{method}-qwen25-1.5b-<timestamp>/)",
+        help="Checkpoint root (default: checkpoints/router-{method}-<model-slug>-<timestamp>/)",
     )
     p.add_argument(
         "--max-length",
@@ -94,7 +94,7 @@ def _add_train_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--hf-repo-id",
         default=os.getenv("HF_REPO_ID"),
-        help="Hugging Face model repo (default: {user}/router-qwen25-1.5b-{method}-v1)",
+        help="Hugging Face model repo (default: {user}/router-<model-slug>-{method}-v1)",
     )
     p.add_argument("--no-hf-upload", action="store_true", help="Skip Hugging Face Hub upload")
     p.set_defaults(_handler=_cmd_train)
@@ -148,7 +148,7 @@ def _cmd_train(args: argparse.Namespace) -> int:
     args.method = normalize_method(args.method)
     _apply_learning_rate_defaults(args)
     if args.output_dir is None:
-        args.output_dir = default_output_dir(args.method)
+        args.output_dir = default_output_dir(args.method, base_model=args.base_model)
     print(f"output-dir: {args.output_dir}", file=sys.stderr)
     return run_training(args)
 
