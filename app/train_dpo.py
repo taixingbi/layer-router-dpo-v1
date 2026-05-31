@@ -7,12 +7,14 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Sequence
 
 from app.env import load_dotenv
 from app.load_jsonl import load_dpo_dataset
 from app.method_config import local_data_dir, normalize_method
+from app.train_metrics import collect_train_timings, log_timings_banner
 
 _LORA_TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
@@ -159,7 +161,11 @@ def run(args: argparse.Namespace) -> int:
         peft_config=peft_config,
     )
 
-    trainer.train()
+    train_t0 = time.perf_counter()
+    train_result = trainer.train()
+    timings = collect_train_timings(trainer, train_result, wall_sec=time.perf_counter() - train_t0)
+    log_timings_banner(method.upper(), timings)
+
     adapter_dir = args.output_dir / "adapter"
     trainer.save_model(str(adapter_dir))
     tokenizer.save_pretrained(adapter_dir)
@@ -176,6 +182,7 @@ def run(args: argparse.Namespace) -> int:
         "beta": args.beta,
         "lora_r": args.lora_r,
         "quantized": not args.no_quant,
+        "timings": timings,
     }
     (args.output_dir / "train_meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     print(f"saved adapter -> {adapter_dir}")

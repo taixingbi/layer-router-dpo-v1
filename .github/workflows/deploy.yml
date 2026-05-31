@@ -36,6 +36,7 @@ jobs:
           AWS_SECURITY_GROUP_NAME: ${{ vars.AWS_SECURITY_GROUP_NAME }}
           EC2_KEY_PAIR: ${{ vars.EC2_KEY_PAIR || 'ec2' }}
           EC2_IAM_INSTANCE_PROFILE: ${{ vars.EC2_IAM_INSTANCE_PROFILE }}
+          EC2_INSTANCE_TYPE: ${{ vars.EC2_INSTANCE_TYPE || 'g5.xlarge' }}
         run: |
           set -e
           if [ -z "$EC2_IAM_INSTANCE_PROFILE" ]; then
@@ -122,10 +123,10 @@ jobs:
             echo "Using existing unassociated EIP: $ALLOC_ID"
           fi
 
-          echo "Creating g5.xlarge instance..."
+          echo "Creating $EC2_INSTANCE_TYPE instance..."
           INSTANCE_ID=$(aws ec2 run-instances \
             --image-id "$AWS_AMI_ID" \
-            --instance-type g5.xlarge \
+            --instance-type "$EC2_INSTANCE_TYPE" \
             --key-name "$EC2_KEY_PAIR" \
             --iam-instance-profile "Name=$EC2_IAM_INSTANCE_PROFILE" \
             --security-group-ids "$AWS_SECURITY_GROUP_ID" \

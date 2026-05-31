@@ -64,9 +64,9 @@ Push to `main` or run [`.github/workflows/deploy.yml`](.github/workflows/deploy.
 
 **Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `HF_TOKEN`
 
-**Variables:** `DEPLOY_BUCKET`, `EC2_IAM_INSTANCE_PROFILE`, `TRAIN_METHOD` (`dpo` or `sft`), `BASE_MODEL` (default `Qwen/Qwen2.5-1.5B-Instruct`), `HF_REPO_FEATURE` (default `router`), `HF_REPO_VERSION` (default `0.00`; e.g. `0.01`, `1.00`), `HF_REPO_ID` (optional full override), `AUTO_TERMINATE_EC2` (default `true`)
+**Variables:** `DEPLOY_BUCKET`, `EC2_IAM_INSTANCE_PROFILE`, `EC2_INSTANCE_TYPE` (default `g5.xlarge`), `TRAIN_METHOD` (`dpo` or `sft`), `BASE_MODEL` (default `Qwen/Qwen2.5-1.5B-Instruct`), `HF_REPO_FEATURE` (default `router`), `HF_REPO_VERSION` (default `0.00`; e.g. `0.01`, `1.00`), `HF_REPO_ID` (optional full override), `AUTO_TERMINATE_EC2` (default `true`)
 
-The workflow ensures a `g5.xlarge` GPU instance (`ec2-gpu-layer-router-train-v1`), syncs app + deploy files to S3, and runs `deploy/remote-deploy.sh` via SSM. After training, the LoRA adapter uploads to Hugging Face Hub (default `{user}/layer-router-{method}-v1`).
+The workflow ensures a GPU instance (default `g5.xlarge`, tag `ec2-gpu-layer-router-train-v1`), syncs app + deploy files to S3, and runs `deploy/remote-deploy.sh` via SSM. After training, the LoRA adapter uploads to Hugging Face Hub (default `{user}/layer-router-{method}-v1`).
 
 **Note:** EC2 tag changed from `ec2-gpu-layer-router-dpo-v1` to `ec2-gpu-layer-router-train-v1`. Terminate any old instance manually if still running.
 
@@ -100,6 +100,7 @@ GitHub Actions variables (Settings → Variables):
 
 | Variable | Example |
 |----------|---------|
+| `EC2_INSTANCE_TYPE` | `g5.xlarge` or `g5.2xlarge` |
 | `TRAIN_METHOD` | `sft` |
 | `BASE_MODEL` | `Qwen/Qwen2.5-7B-Instruct` |
 | `HF_REPO_FEATURE` | `router` |

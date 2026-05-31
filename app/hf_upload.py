@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from app.method_config import default_hf_repo_suffix, normalize_method
+from app.train_metrics import readme_timing_section
 
 
 class HubUploadError(RuntimeError):
@@ -152,7 +153,7 @@ def upload_checkpoint(
                     f"Base model: `{base_model}`",
                     "",
                     "Load with PEFT / vLLM `--enable-lora`.",
-                    "",
+                    *readme_timing_section(meta.get("timings")),
                 ]
             ),
             encoding="utf-8",
