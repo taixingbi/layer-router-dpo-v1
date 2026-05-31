@@ -94,7 +94,7 @@ def _add_train_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--hf-repo-id",
         default=os.getenv("HF_REPO_ID"),
-        help="Hugging Face model repo (default: {HF_TOKEN user}/layer-router-{method}-v1)",
+        help="Hugging Face model repo (default: {user}/router-qwen25-1.5b-{method}-v1)",
     )
     p.add_argument("--no-hf-upload", action="store_true", help="Skip Hugging Face Hub upload")
     p.set_defaults(_handler=_cmd_train)

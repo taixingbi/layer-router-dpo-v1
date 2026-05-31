@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.method_config import (
     DATASET_SUBDIR,
-    DEFAULT_HF_REPO_SUFFIX,
     dataset_subdir,
+    default_hf_repo_suffix,
     local_data_dir,
     normalize_method,
 )
@@ -30,5 +32,12 @@ def test_local_data_dir_per_method():
 
 
 def test_default_hf_repo_suffix():
-    assert DEFAULT_HF_REPO_SUFFIX["dpo"] == "layer-router-dpo-v1"
-    assert DEFAULT_HF_REPO_SUFFIX["sft"] == "layer-router-sft-v1"
+    assert default_hf_repo_suffix("dpo") == "router-qwen25-1.5b-dpo-v1"
+    assert default_hf_repo_suffix("sft") == "router-qwen25-1.5b-sft-v1"
+
+
+def test_default_hf_repo_suffix_env_override(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("HF_REPO_FEATURE", "router")
+    monkeypatch.setenv("HF_REPO_MODEL", "qwen25-7b")
+    monkeypatch.setenv("HF_REPO_VERSION", "v2")
+    assert default_hf_repo_suffix("dpo") == "router-qwen25-7b-dpo-v2"

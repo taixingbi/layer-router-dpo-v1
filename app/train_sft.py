@@ -62,7 +62,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument(
         "--hf-repo-id",
         default=os.getenv("HF_REPO_ID"),
-        help="Hugging Face model repo (default: {HF_TOKEN user}/layer-router-sft-v1)",
+        help="Hugging Face model repo (default: {user}/router-qwen25-1.5b-{method}-v1)",
     )
     p.add_argument("--no-hf-upload", action="store_true", help="Skip Hugging Face Hub upload")
     return p.parse_args(argv)

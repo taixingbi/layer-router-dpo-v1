@@ -27,7 +27,7 @@ def _hub_private() -> bool:
 
 
 def resolve_repo_id(api, repo_id: str | None, *, method: str = "dpo") -> str:
-    """Use HF_REPO_ID when set, otherwise {token_owner}/layer-router-{method}-v1."""
+    """Use HF_REPO_ID when set, else {token_owner}/{feature}-{model}-{method}-{version}."""
     if repo_id and repo_id.strip():
         return repo_id.strip()
     method = normalize_method(method)

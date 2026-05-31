@@ -15,10 +15,9 @@ DATASET_SUBDIR = {
     "sft": "aval/sft-router/output",
 }
 
-DEFAULT_HF_REPO_SUFFIX = {
-    "dpo": "layer-router-dpo-v1",
-    "sft": "layer-router-sft-v1",
-}
+DEFAULT_HF_REPO_FEATURE = "router"
+DEFAULT_HF_REPO_MODEL = "qwen25-1.5b"
+DEFAULT_HF_REPO_VERSION = "v1"
 
 _ORCH_ROOT = REPO_ROOT.parent / "layer-orchestrator-v1"
 
@@ -61,6 +60,25 @@ def dataset_subdir(method: str) -> str:
     return DATASET_SUBDIR[method]
 
 
+def hf_repo_feature() -> str:
+    """Hub repo name segment: feature (default router). Env: HF_REPO_FEATURE."""
+    raw = os.getenv("HF_REPO_FEATURE", DEFAULT_HF_REPO_FEATURE).strip()
+    return raw or DEFAULT_HF_REPO_FEATURE
+
+
+def hf_repo_model() -> str:
+    """Hub repo name segment: model slug (default qwen25-1.5b). Env: HF_REPO_MODEL."""
+    raw = os.getenv("HF_REPO_MODEL", DEFAULT_HF_REPO_MODEL).strip()
+    return raw or DEFAULT_HF_REPO_MODEL
+
+
+def hf_repo_version() -> str:
+    """Hub repo name segment: version tag (default v1). Env: HF_REPO_VERSION."""
+    raw = os.getenv("HF_REPO_VERSION", DEFAULT_HF_REPO_VERSION).strip()
+    return raw or DEFAULT_HF_REPO_VERSION
+
+
 def default_hf_repo_suffix(method: str) -> str:
-    """Default Hugging Face repo name suffix for a training method."""
-    return DEFAULT_HF_REPO_SUFFIX[normalize_method(method)]
+    """Default Hub repo suffix: {feature}-{model}-{method}-{version}."""
+    method = normalize_method(method)
+    return f"{hf_repo_feature()}-{hf_repo_model()}-{method}-{hf_repo_version()}"

@@ -75,14 +75,13 @@ if [ -n "${HF_TOKEN:-}" ]; then
   sed -i '/^HF_TOKEN=/d' "$ENV_FILE" 2>/dev/null || true
   printf 'HF_TOKEN=%s\n' "$HF_TOKEN" >> "$ENV_FILE"
 fi
-sed -i '/^HF_REPO_ID=/d' "$ENV_FILE" 2>/dev/null || true
-if [ -n "${HF_REPO_ID:-}" ]; then
-  printf 'HF_REPO_ID=%s\n' "$HF_REPO_ID" >> "$ENV_FILE"
-fi
-sed -i '/^TRAIN_METHOD=/d' "$ENV_FILE" 2>/dev/null || true
-if [ -n "${TRAIN_METHOD:-}" ]; then
-  printf 'TRAIN_METHOD=%s\n' "$TRAIN_METHOD" >> "$ENV_FILE"
-fi
+for _key in HF_REPO_ID HF_REPO_FEATURE HF_REPO_MODEL HF_REPO_VERSION TRAIN_METHOD; do
+  _val="${!_key:-}"
+  if [ -n "$_val" ]; then
+    sed -i "/^${_key}=/d" "$ENV_FILE" 2>/dev/null || true
+    printf '%s=%s\n' "$_key" "$_val" >> "$ENV_FILE"
+  fi
+done
 
 echo "=== Run router training (TRAIN_METHOD=${TRAIN_METHOD:-dpo}) ==="
 cd "$APP_DIR"
