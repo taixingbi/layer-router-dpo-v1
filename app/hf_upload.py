@@ -160,13 +160,35 @@ def upload_checkpoint(
         )
 
     try:
+        # Upload LoRA adapter files to repo root for vLLM compatibility.
         api.upload_folder(
-            folder_path=str(output_dir),
+            folder_path=str(adapter_dir),
             repo_id=target_repo,
             repo_type="model",
             token=resolved_token,
-            commit_message=f"Upload router {method.upper()} checkpoint ({output_dir.name})",
+            path_in_repo=".",
+            commit_message=f"Upload router {method.upper()} LoRA adapter ({output_dir.name})",
         )
+
+        # Upload training metadata separately.
+        if meta_path.is_file():
+            api.upload_file(
+                path_or_fileobj=str(meta_path),
+                path_in_repo="train_meta.json",
+                repo_id=target_repo,
+                repo_type="model",
+                token=resolved_token,
+            )
+
+        # Upload README separately.
+        if readme_path.is_file():
+            api.upload_file(
+                path_or_fileobj=str(readme_path),
+                path_in_repo="README.md",
+                repo_id=target_repo,
+                repo_type="model",
+                token=resolved_token,
+            )
     except HfHubHTTPError as exc:
         raise HubUploadError(
             f"upload to {target_repo} failed: {exc}\n"
