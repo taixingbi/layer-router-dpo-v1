@@ -10,8 +10,8 @@ import pytest
 from app import load_jsonl as lj
 
 APP_ROOT = Path(__file__).resolve().parents[1]
-ORCH_DPO = APP_ROOT.parent / "layer-orchestrator-v1" / "aval" / "dpo-router"
-ORCH_SFT = APP_ROOT.parent / "layer-orchestrator-v1" / "aval" / "sft-router"
+ORCH_DPO = APP_ROOT.parent / "layer-orchestrator-v1" / "router-eval" / "dpo-router"
+ORCH_SFT = APP_ROOT.parent / "layer-orchestrator-v1" / "router-eval" / "sft-router"
 
 SAMPLE_RECORD = {
     "prompt": [
@@ -127,7 +127,7 @@ def test_load_sft_dataset_from_output(tmp_path):
 
 @pytest.mark.skipif(
     not (ORCH_DPO / "output" / "train.jsonl").is_file(),
-    reason="run layer-orchestrator-v1 aval/dpo-router build first",
+    reason="run layer-orchestrator-v1 router-eval/dpo-router build first",
 )
 def test_load_production_dpo_jsonl():
     """Smoke-test real orchestrator DPO JSONL when the sibling repo is present."""
@@ -143,7 +143,7 @@ def test_load_production_dpo_jsonl():
 
 @pytest.mark.skipif(
     not (ORCH_SFT / "output" / "train.jsonl").is_file(),
-    reason="run layer-orchestrator-v1 aval/sft-router build first",
+    reason="run layer-orchestrator-v1 router-eval/sft-router build first",
 )
 def test_load_production_sft_jsonl():
     """Smoke-test real orchestrator SFT JSONL when the sibling repo is present."""

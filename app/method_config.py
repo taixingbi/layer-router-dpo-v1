@@ -11,8 +11,8 @@ from app.env import REPO_ROOT
 METHODS = ("dpo", "sft")
 
 DATASET_SUBDIR = {
-    "dpo": "aval/dpo-router/output",
-    "sft": "aval/sft-router/output",
+    "dpo": "router-eval/dpo-router/output",
+    "sft": "router-eval/sft-router/output",
 }
 
 DEFAULT_BASE_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"

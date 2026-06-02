@@ -24,10 +24,10 @@ Training JSONL is pulled automatically on first run into `./data/{method}/`:
 
 | Method | Orchestrator output |
 |--------|---------------------|
-| **DPO** (default) | [aval/dpo-router/output](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/aval/dpo-router/output) |
-| **SFT** | [aval/sft-router/output](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/aval/sft-router/output) |
+| **DPO** (default) | [router-eval/dpo-router/output](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/router-eval/dpo-router/output) |
+| **SFT** | [router-eval/sft-router/output](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/router-eval/sft-router/output) |
 
-Or use a monorepo sibling: `../layer-orchestrator-v1/aval/{dpo,sft}-router/output/*.jsonl`.
+Or use a monorepo sibling: `../layer-orchestrator-v1/router-eval/{dpo,sft}-router/output/*.jsonl`.
 
 ## Train on GPU node (16GB)
 
@@ -127,5 +127,5 @@ pytest tests/ -v -k "not production"
 
 ## See also
 
-- [aval/dpo-router/output](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/aval/dpo-router/output) — DPO JSONL
-- [aval/sft-router/output](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/aval/sft-router/output) — SFT JSONL
+- [router-eval/dpo-router/output](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/router-eval/dpo-router/output) — DPO JSONL
+- [router-eval/sft-router/output](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/router-eval/sft-router/output) — SFT JSONL

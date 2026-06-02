@@ -30,7 +30,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     method = normalize_method(os.getenv("TRAIN_METHOD"))
     data_dir = local_data_dir(method)
     p = argparse.ArgumentParser(
-        description="QLoRA DPO train router from layer-orchestrator-v1 aval/dpo-router/output/*.jsonl"
+        description="QLoRA DPO train router from layer-orchestrator-v1 router-eval/dpo-router/output/*.jsonl"
     )
     p.add_argument("--method", default=method, choices=("dpo", "sft"))
     p.add_argument(

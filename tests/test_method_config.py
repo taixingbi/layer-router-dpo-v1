@@ -20,10 +20,10 @@ def test_normalize_method_defaults_to_dpo():
 
 
 def test_dataset_subdirs():
-    assert DATASET_SUBDIR["dpo"] == "aval/dpo-router/output"
-    assert DATASET_SUBDIR["sft"] == "aval/sft-router/output"
-    assert dataset_subdir("dpo") == "aval/dpo-router/output"
-    assert dataset_subdir("sft") == "aval/sft-router/output"
+    assert DATASET_SUBDIR["dpo"] == "router-eval/dpo-router/output"
+    assert DATASET_SUBDIR["sft"] == "router-eval/sft-router/output"
+    assert dataset_subdir("dpo") == "router-eval/dpo-router/output"
+    assert dataset_subdir("sft") == "router-eval/sft-router/output"
 
 
 def test_local_data_dir_per_method():
