@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""QLoRA SFT training for HuntAI intent router (16GB GPU safe defaults)."""
+"""QLoRA DPO training for HuntAI intent router (16GB GPU safe defaults)."""
 
 from __future__ import annotations
 
@@ -11,10 +11,10 @@ import time
 from pathlib import Path
 from typing import Optional, Sequence
 
-from app.env import load_dotenv
-from app.load_jsonl import load_sft_dataset
-from app.method_config import local_data_dir, normalize_method
-from app.train_metrics import collect_train_timings, log_timings_banner
+from app.train.env import load_dotenv
+from app.train.load_jsonl import load_dpo_dataset
+from app.train.method_config import local_data_dir, normalize_method
+from app.train.train_metrics import collect_train_timings, log_timings_banner
 
 _LORA_TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
@@ -26,11 +26,11 @@ def _env_path(name: str, default: Path) -> Path:
 
 
 def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    """Parse CLI flags and env-backed defaults for SFT training."""
+    """Parse CLI flags and env-backed defaults for DPO training."""
     method = normalize_method(os.getenv("TRAIN_METHOD"))
     data_dir = local_data_dir(method)
     p = argparse.ArgumentParser(
-        description="QLoRA SFT train router from layer-orchestrator-v1 router-eval/sft-router/output/*.jsonl"
+        description="QLoRA DPO train router from data/output/dpo/*.jsonl"
     )
     p.add_argument("--method", default=method, choices=("dpo", "sft"))
     p.add_argument(
@@ -53,7 +53,8 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=int(os.getenv("PER_DEVICE_TRAIN_BATCH_SIZE", "1")),
     )
     p.add_argument("--gradient-accumulation-steps", type=int, default=int(os.getenv("GRAD_ACCUM", "8")))
-    p.add_argument("--learning-rate", type=float, default=float(os.getenv("LEARNING_RATE", "2e-4")))
+    p.add_argument("--learning-rate", type=float, default=float(os.getenv("LEARNING_RATE", "5e-5")))
+    p.add_argument("--beta", type=float, default=float(os.getenv("DPO_BETA", "0.1")))
     p.add_argument("--lora-r", type=int, default=int(os.getenv("LORA_R", "32")))
     p.add_argument("--lora-alpha", type=int, default=int(os.getenv("LORA_ALPHA", "64")))
     p.add_argument("--lora-dropout", type=float, default=0.05)
@@ -71,8 +72,8 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    """Run QLoRA SFT training and write adapter + train_meta.json to output_dir."""
-    from app.pipeline import prepare_training
+    """Run QLoRA DPO training and write adapter + train_meta.json to output_dir."""
+    from app.train.pipeline import prepare_training
 
     load_dotenv()
     args = _parse_args(argv)
@@ -81,22 +82,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 
 def run(args: argparse.Namespace) -> int:
-    """Run QLoRA SFT training (dataset paths must already be resolved)."""
+    """Run QLoRA DPO training (dataset paths must already be resolved)."""
     from datasets import Dataset
     from peft import LoraConfig, prepare_model_for_kbit_training
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-    from trl import SFTConfig, SFTTrainer
+    from trl import DPOConfig, DPOTrainer
 
-    method = normalize_method(getattr(args, "method", "sft"))
+    method = normalize_method(getattr(args, "method", "dpo"))
     args.method = method
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
+    tokenizer.padding_side = "left"
 
-    train_rows, val_rows = load_sft_dataset(
+    train_rows, val_rows = load_dpo_dataset(
         args.train_jsonl,
         args.val_jsonl,
         tokenizer=tokenizer,
@@ -129,14 +130,15 @@ def run(args: argparse.Namespace) -> int:
         target_modules=_LORA_TARGETS,
     )
 
-    training_args = SFTConfig(
+    training_args = DPOConfig(
         output_dir=str(args.output_dir),
         per_device_train_batch_size=args.per_device_train_batch_size,
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         num_train_epochs=args.num_train_epochs,
         learning_rate=args.learning_rate,
-        max_seq_length=args.max_length,
+        beta=args.beta,
+        max_length=args.max_length,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
         save_total_limit=2,
@@ -146,13 +148,12 @@ def run(args: argparse.Namespace) -> int:
         gradient_checkpointing=True,
         optim="paged_adamw_32bit" if not args.no_quant else "adamw_torch",
         report_to=[],
-        remove_unused_columns=True,
-        dataset_text_field="text",
-        packing=False,
+        remove_unused_columns=False,
     )
 
-    trainer = SFTTrainer(
+    trainer = DPOTrainer(
         model=model,
+        ref_model=None,
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
@@ -178,7 +179,7 @@ def run(args: argparse.Namespace) -> int:
         "val_rows": len(val_rows) if val_rows else 0,
         "max_length": args.max_length,
         "num_train_epochs": args.num_train_epochs,
-        "learning_rate": args.learning_rate,
+        "beta": args.beta,
         "lora_r": args.lora_r,
         "quantized": not args.no_quant,
         "timings": timings,
@@ -188,7 +189,7 @@ def run(args: argparse.Namespace) -> int:
 
     if not args.no_hf_upload and os.getenv("HF_TOKEN"):
         try:
-            from app.hf_upload import upload_checkpoint
+            from app.train.hf_upload import upload_checkpoint
 
             upload_checkpoint(args.output_dir, args.hf_repo_id, method=method)
         except Exception as exc:

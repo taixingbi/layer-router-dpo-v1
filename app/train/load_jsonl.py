@@ -1,4 +1,4 @@
-"""Load router DPO/SFT JSONL from layer-orchestrator-v1 into TRL-ready rows."""
+"""Load router DPO/SFT JSONL from data/output into TRL-ready rows."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def _extract_completion(
 
 
 def _record_to_dpo_row(rec: Dict[str, Any], *, tokenizer: Any) -> Dict[str, str]:
-    """Map one build_from_gold record to {prompt, chosen, rejected}."""
+    """Map one DPO JSONL record to {prompt, chosen, rejected}."""
     messages = rec.get("prompt")
     if not isinstance(messages, list) or len(messages) < 2:
         raise ValueError("record missing prompt messages")
@@ -82,7 +82,7 @@ def records_to_dpo_rows(
     *,
     tokenizer: Any,
 ) -> List[Dict[str, str]]:
-    """Map build_from_gold JSONL records to {prompt, chosen, rejected}."""
+    """Map router DPO JSONL records to {prompt, chosen, rejected}."""
     return [_record_to_dpo_row(rec, tokenizer=tokenizer) for rec in records]
 
 

@@ -7,8 +7,8 @@ import os
 import sys
 from pathlib import Path
 
-from app.method_config import default_hf_repo_suffix, normalize_method
-from app.train_metrics import readme_timing_section
+from app.train.method_config import default_hf_repo_suffix, normalize_method
+from app.train.train_metrics import readme_timing_section
 
 
 class HubUploadError(RuntimeError):

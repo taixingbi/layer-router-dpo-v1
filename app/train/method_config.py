@@ -6,14 +6,12 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from app.env import REPO_ROOT
+from app.train.env import REPO_ROOT
+from app.build.paths import dataset_output_dir, dataset_subdir_relpath
 
 METHODS = ("dpo", "sft")
 
-DATASET_SUBDIR = {
-    "dpo": "router-eval/dpo-router/output",
-    "sft": "router-eval/sft-router/output",
-}
+DATASET_SUBDIR = {m: dataset_subdir_relpath(m) for m in METHODS}
 
 DEFAULT_BASE_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 DEFAULT_HF_REPO_FEATURE = "router"
@@ -34,8 +32,6 @@ def base_model_to_slug(base_model: str) -> str:
 
 DEFAULT_HF_REPO_MODEL = base_model_to_slug(DEFAULT_BASE_MODEL)
 
-_ORCH_ROOT = REPO_ROOT.parent / "layer-orchestrator-v1"
-
 
 def normalize_method(raw: str | None) -> str:
     """Return a validated training method (default dpo)."""
@@ -50,10 +46,9 @@ def local_data_dir(method: str) -> Path:
     return REPO_ROOT / "data" / normalize_method(method)
 
 
-def orch_sibling_path(method: str) -> Path:
-    """Monorepo sibling path for orchestrator JSONL output."""
-    method = normalize_method(method)
-    return _ORCH_ROOT / DATASET_SUBDIR[method]
+def dataset_output_path(method: str) -> Path:
+    """Local built JSONL output (build scripts write here)."""
+    return dataset_output_dir(normalize_method(method))
 
 
 def default_output_dir(method: str, *, base_model: str | None = None) -> Path:
@@ -65,7 +60,7 @@ def default_output_dir(method: str, *, base_model: str | None = None) -> Path:
 
 
 def dataset_subdir(method: str) -> str:
-    """GitHub subdir for orchestrator dataset fetch."""
+    """GitHub subdir for dataset fetch in this repo."""
     method = normalize_method(method)
     override = os.getenv("ORCHESTRATOR_DATASET_SUBDIR")
     if override:

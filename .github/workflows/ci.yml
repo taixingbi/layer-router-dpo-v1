@@ -34,4 +34,4 @@ jobs:
           pip install -e . --no-deps
 
       - name: Run tests
-        run: pytest tests/ -v -k "not production"
+        run: pytest app/tests/ -v -k "not production"
