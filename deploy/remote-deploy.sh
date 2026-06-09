@@ -46,6 +46,8 @@ echo "Using $PYTHON ($($PYTHON --version))"
 echo "=== Prepare app directory ==="
 cd "$APP_DIR" || { echo "ERROR: $APP_DIR not found"; exit 1; }
 mkdir -p data checkpoints
+# Drop cached JSONL so S3-synced data/output/ wins over stale data/{method}/.
+rm -rf data/dpo data/sft
 
 echo "=== Create fresh venv ==="
 rm -rf .venv
@@ -86,6 +88,16 @@ done
 sed -i '/^HF_REPO_MODEL=/d' "$ENV_FILE" 2>/dev/null || true
 
 echo "=== Run router training (TRAIN_METHOD=${TRAIN_METHOD:-dpo}) ==="
+METHOD="${TRAIN_METHOD:-dpo}"
+BUILT_JSONL="$APP_DIR/data/output/$METHOD/train.jsonl"
+CACHE_JSONL="$APP_DIR/data/$METHOD/train.jsonl"
+if [ -f "$BUILT_JSONL" ]; then
+  echo "dataset: $BUILT_JSONL ($(wc -l < "$BUILT_JSONL") lines, from S3 sync)"
+elif [ -f "$CACHE_JSONL" ]; then
+  echo "dataset: $CACHE_JSONL (cached)"
+else
+  echo "WARN: $BUILT_JSONL missing after S3 sync; app.train will fetch from GitHub (data/output/$METHOD/)"
+fi
 cd "$APP_DIR"
 PYTHONUNBUFFERED=1 python -u -m app.train.main
 

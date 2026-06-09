@@ -111,13 +111,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--include-hack", action="store_true")
     args = parser.parse_args(argv)
 
-    if not args.gold_data_dir.is_dir():
-        print(f"error: gold data dir not found: {args.gold_data_dir}", file=sys.stderr)
-        return 1
+    from app.build.fetch_gold import ensure_gold_data
+
+    gold_data_dir = ensure_gold_data(args.gold_data_dir)
 
     system_prompt = load_router_system_prompt(args.router_prompt_version)
     train, val, stats = build_sft_dataset(
-        gold_data_dir=args.gold_data_dir,
+        gold_data_dir=gold_data_dir,
         system_prompt=system_prompt,
         include_seed_faq=args.include_seed_faq,
         include_hack=args.include_hack,

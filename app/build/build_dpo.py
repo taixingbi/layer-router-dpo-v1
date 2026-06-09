@@ -286,15 +286,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("error: --fetch-live requires --orchestrator-url or ORCHESTRATOR_URL", file=sys.stderr)
         return 1
 
-    if not args.gold_data_dir.is_dir():
-        print(f"error: gold data dir not found: {args.gold_data_dir}", file=sys.stderr)
-        return 1
+    from app.build.fetch_gold import ensure_gold_data
+
+    gold_data_dir = ensure_gold_data(args.gold_data_dir)
 
     system_prompt = load_router_system_prompt(args.router_prompt_version)
     result_dir = args.result_dir if args.result_dir.is_dir() else None
 
     train, val, stats = build_dpo_dataset(
-        gold_data_dir=args.gold_data_dir,
+        gold_data_dir=gold_data_dir,
         result_dir=result_dir,
         system_prompt=system_prompt,
         include_seed_faq=args.include_seed_faq,

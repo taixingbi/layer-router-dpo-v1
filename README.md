@@ -12,7 +12,7 @@
 | `app/build/` | DPO/SFT JSONL builders (`router-build`) |
 | `app/eval/` | Golden batch eval vs orchestrator (`router-eval`) |
 | `app/tests/` | Pytest (CPU-only; no GPU) |
-| `data/dpo/`, `data/sft/` | Cached JSONL per method (gitignored) |
+| `data/dpo/`, `data/sft/` | Cached JSONL per method (from fetch or train) |
 | `data/golden-test/` | Gold CSVs + eval results |
 | `data/output/dpo`, `data/output/sft` | Committed training JSONL |
 | `checkpoints/` | Training output (gitignored) |
@@ -33,7 +33,73 @@ Build locally with `python -m app.build {dpo,sft}` (auto-uses orchestrator venv 
 
 Build JSONL for the **intent router LLM only** (`run_intent_rewrite_router` in layer-orchestrator-v1). Does not train RAG, GitHub MCP, or answer models. Shared gold logic: `app/build/gold.py`. Outputs: `data/output/dpo/`, `data/output/sft/`.
 
-**Prerequisite:** sibling `layer-orchestrator-v1` (`ORCHESTRATOR_ROOT` if layout differs).
+**Gold CSVs:** `app.build` and `app.eval` auto-fetch from [layer-orchestrator-v1 `router-eval/golden-test/data`](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/router-eval/golden-test/data) when `data/golden-test/data/` is empty. Local copy or sibling checkout is used if present. Override with `ORCHESTRATOR_GOLD_REPO`, `ORCHESTRATOR_REF`, `ORCHESTRATOR_GOLD_SUBDIR`.
+
+**Orchestrator code (build only):** sibling `layer-orchestrator-v1` for router prompts and gold logic (`ORCHESTRATOR_ROOT` if layout differs).
+
+### Golden batch eval
+
+For each row in `data/golden-test/data/**/*.csv`, calls `POST /v1/orchestrator/eval/router`, writes per-suite results under `data/golden-test/result/` (flat basename, e.g. `router_greeting.csv`), then builds `result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`.
+
+**Requirements:** `pip install -e ".[dev]"` (stdlib HTTP; no curl/jq) and a running orchestrator at `ORCHESTRATOR_URL` (default `http://192.168.86.179:30184`).
+
+| Path | Role |
+|------|------|
+| `data/golden-test/data/tools/*.csv` | Tool-route gold (`rag_private_kb`, `web_search`, …) |
+| `data/golden-test/data/internal/*.csv` | Internal-intent gold (`greeting`, `identity`, `help`, …) |
+| Header | `question,expected_route` (required). Optional: `conversation_id`, `history` (JSON `{role, content}` array) |
+| Threading | Default `conversation_id` per file: `conv-gold-<basename>`; `X-Session-Id: ses-gold-<basename>` |
+| `result/<name>.csv` | Per input basename: `question`, `expected_route`, `actual_route`, `route_match`, `rewritten_question`, `actual_answer` |
+| `result/router-eval-report-<version>.md` | Summary, match rate, bad items (`route_match` = false) |
+
+```bash
+python -m app.eval
+
+CONCURRENCY=20 ROUTER_PROMPT_VERSION=router-v2.00 python -m app.eval
+
+# Score a trained LoRA (separate result dir per adapter)
+ROUTER_MODEL=router-qwen2.5-7b-sft-v1.00 \
+  python -m app.eval \
+  --result-dir data/golden-test/result/sft-v1.00 \
+  --router-prompt-version router-v2.00
+```
+
+**Progress** (stderr) — one line per gold file, then match-rate table on stdout. Full report: `data/golden-test/result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`. Generated `result/*.csv` and reports are gitignored under `data/golden-test/.gitignore`.
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `DATA_DIR` | `data/golden-test/data` | Input `*.csv` directory |
+| `RESULT_DIR` | `data/golden-test/result` | Output directory |
+| `ORCHESTRATOR_URL` | `http://192.168.86.179:30184` | Orchestrator base URL |
+| `CONCURRENCY` | `4` | Parallel HTTP requests per file |
+| `ROUTER_PROMPT_VERSION` | `router-v2.00` | `router_prompt_version` on each eval request |
+| `ROUTER_MODEL` | _(unset)_ | Optional vLLM model / LoRA id; sent as `router_model` |
+| `REPORT_PATH` | `…/router-eval-report-<prompt>[-<model>].md` | Markdown report path |
+
+Eval responses include `decision.route_detail` alongside legacy `decision.route`. Optional CSV columns: `expected_route_detail_type`, `expected_tool_name`.
+
+**Gold suites** (`router_<suite>.csv`):
+
+| File | Focus |
+|------|--------|
+| `data/golden-test/data/internal/router_greeting.csv` | `greeting` — smalltalk seed |
+| `data/golden-test/data/internal/router_identity.csv` | `identity` |
+| `data/golden-test/data/internal/router_capabilities.csv` | `capabilities` |
+| `data/golden-test/data/internal/router_help.csv` | `help` |
+| `data/golden-test/data/internal/router_reject.csv` | Injection guard → `reject` |
+| `data/golden-test/data/tools/router_rag_private_kb.csv` | Candidate / profile (`rag_private_kb`) |
+| `data/golden-test/data/tools/router_github.csv` | HuntAI repos (`github_search`) |
+| `data/golden-test/data/tools/router_web_search.csv` | Public web (`web_search`) |
+
+**Small-talk seed (not RAG):** `layer-orchestrator-v1/app/prompts/seed_intents/*.json` — on empty history, normalized question matched exactly to `user_examples` → `direct_reply` with seed `answer` (no router LLM). `__CANDIDATE_NAME__` replaced at runtime.
+
+### CLI
+
+| Command | Purpose |
+|---------|---------|
+| `python -m app.eval` or `router-eval` | Batch golden-test vs orchestrator |
+| `python -m app.build dpo` or `router-build dpo` | Build DPO JSONL |
+| `python -m app.build sft` or `router-build sft` | Build SFT JSONL |
 
 ### Build DPO JSONL
 
@@ -61,12 +127,6 @@ Include seed-FAQ / injection gold (normally skipped):
 
 ```bash
 python -m app.build dpo --include-seed-faq --include-hack
-```
-
-Post-train regression check:
-
-```bash
-ROUTER_PROMPT_VERSION=router-v2.00 python -m app.eval
 ```
 
 ### DPO JSONL record shape
@@ -108,14 +168,6 @@ Optional columns: `expected_tool`, `history_json`, `conversation_id`, `history`.
 
 By default **skips** `internal/router_*.csv` (small-talk seed) and `router_reject.csv` (injection guard) — no router LLM in prod on those paths.
 
-### CLI
-
-| Command | Purpose |
-|---------|---------|
-| `python -m app.eval` or `router-eval` | Batch golden-test vs orchestrator |
-| `python -m app.build dpo` or `router-build dpo` | Build DPO JSONL |
-| `python -m app.build sft` or `router-build sft` | Build SFT JSONL |
-
 ### Build SFT JSONL
 
 Gold completions only (no rejected pairs). Builder: `app/build/build_sft.py`.
@@ -126,8 +178,6 @@ python -m app.build sft --include-seed-faq --include-hack
 ```
 
 SFT record shape: `messages` with `system` / `user` / `assistant` (assistant content is router JSON). Assistant JSON matches DPO **chosen**.
-
-See [data/golden-test/readme.md](data/golden-test/readme.md).
 
 ## Train on GPU node (16GB)
 
@@ -216,6 +266,6 @@ pytest app/tests/ -v -k "not production"
 
 ## See also
 
-- [data/golden-test/readme.md](data/golden-test/readme.md) — golden batch eval
 - [data/output/dpo](https://github.com/taixingbi/layer-router-train-v1/tree/main/data/output/dpo) — DPO JSONL
 - [data/output/sft](https://github.com/taixingbi/layer-router-train-v1/tree/main/data/output/sft) — SFT JSONL
+- [layer-orchestrator-v1 golden-test data](https://github.com/taixingbi/layer-orchestrator-v1/tree/main/router-eval/golden-test/data) — upstream gold CSVs

@@ -289,6 +289,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--report-path", type=Path, default=None)
     args = parser.parse_args(argv)
 
+    from app.build.fetch_gold import ensure_gold_data
+
+    args.data_dir = ensure_gold_data(args.data_dir)
+
     report_path = args.report_path
     if report_path is None:
         suffix = _report_suffix(args.router_prompt_version, args.router_model)
