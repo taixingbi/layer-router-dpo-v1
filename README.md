@@ -16,6 +16,7 @@
 | `data/golden-test/` | Gold CSVs + eval results |
 | `data/output/dpo`, `data/output/sft` | Committed training JSONL |
 | `checkpoints/` | Training output (gitignored) |
+| `deploy/` | EC2 GPU bootstrap (`remote-deploy.sh`, `requirements-gpu.txt`) |
 
 ## Dataset
 
@@ -157,6 +158,16 @@ After `pip install -e .`, run `layer-router-train` (alias: `layer-router-dpo`).
 
 **OOM on 16GB:** lower `--max-length` / `--gradient-accumulation-steps` / `--num-train-epochs`.
 
+### Deploy to EC2 GPU (AWS)
+
+Push to `main` or run [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) manually.
+
+**Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `HF_TOKEN`
+
+**Variables:** `DEPLOY_BUCKET`, `EC2_IAM_INSTANCE_PROFILE`, `EC2_INSTANCE_TYPE` (default `g5.xlarge`), `TRAIN_METHOD` (`dpo` or `sft`), `BASE_MODEL` (default `Qwen/Qwen2.5-1.5B-Instruct`), `HF_REPO_FEATURE` (default `router`), `HF_REPO_VERSION` (default `0.00`; e.g. `0.01`, `1.00`), `HF_REPO_ID` (optional full override), `AUTO_TERMINATE_EC2` (default `true`)
+
+The workflow ensures a GPU instance (tag `ec2-gpu-layer-router-train-v1`), syncs the repo to S3, and runs `deploy/remote-deploy.sh` via SSM (`python -m app.train.main`). After training, the LoRA adapter uploads to Hugging Face Hub.
+
 ### Flags (`python -m app.train.main`)
 
 | Flag / env | Meaning |
@@ -184,6 +195,8 @@ Default Hub repos (owner = `HF_TOKEN` user, override with `HF_REPO_ID`):
 Pattern: `{HF_REPO_FEATURE}-{model-slug}-{method}-{HF_REPO_VERSION}` where `model-slug` is derived from `BASE_MODEL` (e.g. `Qwen/Qwen2.5-7B-Instruct` → `qwen2.5-7b`). Bump `HF_REPO_VERSION` to `0.01` or `1.00` for the next release repo.
 
 Do **not** set `HF_REPO_MODEL` — the Hub slug is derived from `BASE_MODEL`.
+
+**GitHub Actions variables** (for EC2 deploy workflow): `TRAIN_METHOD`, `BASE_MODEL`, `HF_REPO_FEATURE`, `HF_REPO_VERSION`, `HF_REPO_ID`, `EC2_INSTANCE_TYPE`.
 
 ```bash
 export HF_TOKEN=hf_...

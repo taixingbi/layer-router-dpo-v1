@@ -1,0 +1,16 @@
+# Pinned GPU stack for EC2 g5 (CUDA 12.1). Installed by deploy/remote-deploy.sh.
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+torch==2.4.1
+transformers==4.46.3
+peft==0.13.2
+trl==0.12.2
+bitsandbytes==0.44.1
+accelerate==1.1.1
+datasets==3.1.0
+rich>=13.0.0
+sentencepiece>=0.2.0
+protobuf>=4.25.0
+huggingface_hub>=0.26.0
+safetensors>=0.4.0
+tokenizers>=0.19.0

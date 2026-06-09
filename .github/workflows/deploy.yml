@@ -1,0 +1,356 @@
+name: Deploy router training to EC2 GPU
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+concurrency:
+  group: deploy-layer-router-train-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ensure-instance:
+    runs-on: ubuntu-latest
+    outputs:
+      host: ${{ steps.ensure.outputs.host }}
+      instance_id: ${{ steps.ensure.outputs.instance_id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Ensure EC2 instance exists
+        id: ensure
+        env:
+          AWS_AMI_ID: ${{ vars.AWS_AMI_ID }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          AWS_SECURITY_GROUP_ID: ${{ vars.AWS_SECURITY_GROUP_ID }}
+          AWS_SECURITY_GROUP_NAME: ${{ vars.AWS_SECURITY_GROUP_NAME }}
+          EC2_KEY_PAIR: ${{ vars.EC2_KEY_PAIR || 'ec2' }}
+          EC2_IAM_INSTANCE_PROFILE: ${{ vars.EC2_IAM_INSTANCE_PROFILE }}
+          EC2_INSTANCE_TYPE: ${{ vars.EC2_INSTANCE_TYPE || 'g5.xlarge' }}
+        run: |
+          set -e
+          if [ -z "$EC2_IAM_INSTANCE_PROFILE" ]; then
+            echo "ERROR: EC2_IAM_INSTANCE_PROFILE is required for SSM. Set it in repo vars (e.g. ec2-ssm-role)."
+            exit 1
+          fi
+          if [ -z "$AWS_AMI_ID" ]; then
+            echo "AWS_AMI_ID not set, auto-resolving latest Deep Learning GPU AMI..."
+            AWS_AMI_ID="$(aws ec2 describe-images \
+              --region "$AWS_REGION" \
+              --owners amazon \
+              --filters \
+                "Name=name,Values=Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04) ????????" \
+                "Name=state,Values=available" \
+                "Name=architecture,Values=x86_64" \
+              --query "Images | sort_by(@, &CreationDate) | [-1].ImageId" \
+              --output text 2>/dev/null || true)"
+            if [ -z "$AWS_AMI_ID" ] || [ "$AWS_AMI_ID" = "None" ]; then
+              echo "describe-images returned nothing, trying SSM Parameter Store..."
+              for SSM_PATH in \
+                "/aws/service/deeplearning/ami/x86_64/oss-nvidia-driver-gpu-pytorch-2.8-ubuntu-24.04/latest/ami-id" \
+                "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-ubuntu-22.04/latest/ami-id"; do
+                AWS_AMI_ID="$(aws ssm get-parameter --region "$AWS_REGION" --name "$SSM_PATH" --query "Parameter.Value" --output text 2>/dev/null || true)"
+                [ -n "$AWS_AMI_ID" ] && [ "$AWS_AMI_ID" != "None" ] && break
+              done
+            fi
+            if [ -z "$AWS_AMI_ID" ] || [ "$AWS_AMI_ID" = "None" ]; then
+              echo "ERROR: Could not auto-resolve a Deep Learning GPU AMI in region $AWS_REGION. Set AWS_AMI_ID in repo vars."
+              exit 1
+            fi
+            echo "Using GPU AMI: $AWS_AMI_ID"
+          fi
+          if [ -z "$AWS_SECURITY_GROUP_ID" ]; then
+            SG_NAME="${AWS_SECURITY_GROUP_NAME:-ec2}"
+            echo "Resolving security group by name '$SG_NAME'..."
+            AWS_SECURITY_GROUP_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=$SG_NAME" --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || true)
+            if [ -z "$AWS_SECURITY_GROUP_ID" ] || [ "$AWS_SECURITY_GROUP_ID" = "None" ]; then
+              echo "ERROR: Could not resolve security group '$SG_NAME'. Set AWS_SECURITY_GROUP_ID or AWS_SECURITY_GROUP_NAME in repo vars."
+              exit 1
+            fi
+          fi
+
+          INSTANCE_NAME="ec2-gpu-layer-router-train-v1"
+          EIP_TAG="ec2-gpu-layer-router-train-v1-eip"
+          echo "Looking for running instance with tag Name=$INSTANCE_NAME..."
+          EXISTING_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=$INSTANCE_NAME" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text 2>/dev/null || true)
+
+          if [ -n "$EXISTING_ID" ] && [ "$EXISTING_ID" != "None" ]; then
+            INST=$(aws ec2 describe-instances --instance-ids "$EXISTING_ID" --query 'Reservations[0].Instances[0].[PublicIpAddress,BlockDeviceMappings[0].Ebs.VolumeId]' --output text 2>/dev/null)
+            EXISTING_IP=$(echo "$INST" | cut -f1)
+            ROOT_VOL=$(echo "$INST" | cut -f2)
+            ROOT_GB=0
+            [ -n "$ROOT_VOL" ] && [ "$ROOT_VOL" != "None" ] && ROOT_GB=$(aws ec2 describe-volumes --volume-ids "$ROOT_VOL" --query 'Volumes[0].Size' --output text 2>/dev/null || echo "0")
+            if [ -n "$ROOT_GB" ] && [ "$ROOT_GB" -ge 150 ] 2>/dev/null && [ -n "$EXISTING_IP" ] && [ "$EXISTING_IP" != "None" ]; then
+              SSM_STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$EXISTING_ID" --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null || echo "None")
+              if [ "$SSM_STATUS" = "Online" ]; then
+                echo "Found existing instance ($ROOT_GB GB root, SSM ready): $EXISTING_IP"
+                echo "instance_id=$EXISTING_ID" >> "$GITHUB_OUTPUT"
+                echo "host=$EXISTING_IP" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "Existing instance not in SSM (status=$SSM_STATUS). Terminating for rebuild..."
+            else
+              echo "Existing instance has only ${ROOT_GB}GB root (need 150+). Terminating for rebuild..."
+            fi
+            aws ec2 terminate-instances --instance-ids "$EXISTING_ID"
+            echo "Waiting for termination..."
+            aws ec2 wait instance-terminated --instance-ids "$EXISTING_ID"
+          fi
+
+          echo "Creating new instance. Ensuring Elastic IP..."
+          ALLOC_ID=$(aws ec2 describe-addresses \
+            --filters "Name=tag:Name,Values=$EIP_TAG" "Name=domain,Values=vpc" \
+            --query 'Addresses[?AssociationId==null].AllocationId | [0]' \
+            --output text 2>/dev/null || true)
+
+          if [ -z "$ALLOC_ID" ] || [ "$ALLOC_ID" = "None" ]; then
+            ALLOC_ID=$(aws ec2 allocate-address --domain vpc --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=Name,Value=$EIP_TAG}]" --query 'AllocationId' --output text)
+            echo "Allocated new EIP: $ALLOC_ID"
+          else
+            echo "Using existing unassociated EIP: $ALLOC_ID"
+          fi
+
+          echo "Creating $EC2_INSTANCE_TYPE instance..."
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id "$AWS_AMI_ID" \
+            --instance-type "$EC2_INSTANCE_TYPE" \
+            --key-name "$EC2_KEY_PAIR" \
+            --iam-instance-profile "Name=$EC2_IAM_INSTANCE_PROFILE" \
+            --security-group-ids "$AWS_SECURITY_GROUP_ID" \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$INSTANCE_NAME}]" \
+            --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=200,VolumeType=gp3}' \
+            --query 'Instances[0].InstanceId' \
+            --output text)
+
+          echo "Created instance $INSTANCE_ID. Waiting for running state..."
+          aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
+
+          echo "Associating Elastic IP..."
+          aws ec2 associate-address --instance-id "$INSTANCE_ID" --allocation-id "$ALLOC_ID"
+
+          EIP=$(aws ec2 describe-addresses --allocation-ids "$ALLOC_ID" --query 'Addresses[0].PublicIp' --output text)
+          echo "Instance ready at $EIP"
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+          echo "host=$EIP" >> "$GITHUB_OUTPUT"
+
+          echo "Waiting for SSM agent..."
+          for j in $(seq 1 36); do
+            if aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null | grep -q "Online"; then
+              echo "SSM agent ready"
+              exit 0
+            fi
+            [ $j -eq 36 ] && { echo "Timeout waiting for SSM agent"; exit 1; }
+            sleep 10
+          done
+
+  deploy:
+    needs: ensure-instance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload deploy files to S3
+        env:
+          DEPLOY_BUCKET: ${{ vars.DEPLOY_BUCKET }}
+        run: |
+          if [ -z "$DEPLOY_BUCKET" ]; then
+            echo "ERROR: DEPLOY_BUCKET is required. Set it in repo vars."
+            exit 1
+          fi
+          aws s3 sync deploy/ "s3://$DEPLOY_BUCKET/deploy/" --exclude ".env" --delete
+          aws s3 sync . "s3://$DEPLOY_BUCKET/app/" \
+            --exclude ".git/*" \
+            --exclude ".venv/*" \
+            --exclude ".venv-*/*" \
+            --exclude "venv/*" \
+            --exclude "data/*" \
+            --exclude "checkpoints/*" \
+            --exclude ".pytest_cache/*" \
+            --exclude "__pycache__/*" \
+            --exclude "*.egg-info/*" \
+            --exclude ".cache/*" \
+            --delete
+          echo "Deploy files synced to s3://$DEPLOY_BUCKET/"
+
+      - name: SSM Deploy
+        env:
+          INSTANCE_ID: ${{ needs.ensure-instance.outputs.instance_id }}
+          DEPLOY_BUCKET: ${{ vars.DEPLOY_BUCKET }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          TRAIN_METHOD: ${{ vars.TRAIN_METHOD || 'dpo' }}
+          BASE_MODEL: ${{ vars.BASE_MODEL || 'Qwen/Qwen2.5-1.5B-Instruct' }}
+          HF_REPO_ID: ${{ vars.HF_REPO_ID || '' }}
+          HF_REPO_FEATURE: ${{ vars.HF_REPO_FEATURE || 'router' }}
+          HF_REPO_VERSION: ${{ vars.HF_REPO_VERSION || '0.00' }}
+          AUTO_TERMINATE_EC2: ${{ vars.AUTO_TERMINATE_EC2 || 'true' }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        run: |
+          set -e
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "null" ]; then
+            echo "ERROR: No instance_id from ensure-instance"
+            exit 1
+          fi
+          if [ -z "$HF_TOKEN" ]; then
+            echo "ERROR: HF_TOKEN secret is required."
+            exit 1
+          fi
+          HF_ESC=$(printf '%s' "$HF_TOKEN" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+          EXPORT_CMD="export HF_TOKEN=\"$HF_ESC\""
+          DEPLOY_DIR="/home/ubuntu/deploy"
+          APP_DIR="/home/ubuntu/layer-router-train-v1"
+          COMMANDS=$(jq -n \
+            --arg e "$EXPORT_CMD" \
+            --arg m "$TRAIN_METHOD" \
+            --arg base "$BASE_MODEL" \
+            --arg f "$HF_REPO_FEATURE" \
+            --arg ver "$HF_REPO_VERSION" \
+            --arg repo "$HF_REPO_ID" \
+            --arg b "$DEPLOY_BUCKET" \
+            --arg d "$DEPLOY_DIR" \
+            --arg a "$APP_DIR" \
+            '["set -e", $e,
+              "export TRAIN_METHOD=" + ($m | @sh),
+              "export BASE_MODEL=" + ($base | @sh),
+              "export HF_REPO_FEATURE=" + ($f | @sh),
+              "export HF_REPO_VERSION=" + ($ver | @sh),
+              (if ($repo | length) > 0 then "export HF_REPO_ID=" + ($repo | @sh) else empty end),
+              "mkdir -p " + $d + " " + $a,
+              ("aws s3 cp s3://" + $b + "/deploy/ " + $d + "/ --recursive"),
+              ("rm -rf " + $a + "/.venv " + $a + "/venv"),
+              ("aws s3 sync s3://" + $b + "/app/ " + $a + "/ --delete --exclude \".venv/*\" --exclude \".venv-*/*\" --exclude \"venv/*\" --exclude \"data/*\" --exclude \"checkpoints/*\" --exclude \".env\" --exclude \"*.egg-info/*\""),
+              "chown -R ubuntu:ubuntu " + $d + " " + $a,
+              "cd " + $d, "chmod +x remote-deploy.sh",
+              ("APP_DIR=" + $a + " DEPLOY_DIR=" + $d + " bash remote-deploy.sh")]')
+          echo "Sending deploy command via SSM..."
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "{\"commands\":$COMMANDS}" \
+            --timeout-seconds 14400 \
+            --output text \
+            --query 'Command.CommandId')
+
+          DEPLOY_LOG="/tmp/router-train-deploy.log"
+          echo "Waiting for SSM command to complete (up to 4 hours)..."
+          echo "Live logs: polling $DEPLOY_LOG on EC2 every 15s"
+          LAST_LOG_BYTES=0
+
+          _fetch_log_tail() {
+            local offset="$1"
+            local tail_id tail_status tail_out
+            tail_id=$(aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters "{\"commands\":[\"test -f $DEPLOY_LOG && tail -c +$((offset + 1)) $DEPLOY_LOG || true\"]}" \
+              --timeout-seconds 60 \
+              --output text \
+              --query 'Command.CommandId' 2>/dev/null || true)
+            [ -z "$tail_id" ] || [ "$tail_id" = "None" ] && return 1
+            for _ in $(seq 1 12); do
+              tail_status=$(aws ssm get-command-invocation \
+                --command-id "$tail_id" --instance-id "$INSTANCE_ID" \
+                --region "$AWS_REGION" --query 'Status' --output text 2>/dev/null || echo "Pending")
+              case "$tail_status" in
+                Success|Failed|Cancelled|TimedOut)
+                  tail_out=$(aws ssm get-command-invocation \
+                    --command-id "$tail_id" --instance-id "$INSTANCE_ID" \
+                    --region "$AWS_REGION" --query 'StandardOutputContent' --output text 2>/dev/null || true)
+                  if [ -n "$tail_out" ]; then
+                    printf '%s' "$tail_out"
+                  fi
+                  return 0
+                  ;;
+              esac
+              sleep 2
+            done
+            return 1
+          }
+
+          _terminate_ec2() {
+            local reason="$1"
+            if [ "${AUTO_TERMINATE_EC2,,}" != "true" ]; then
+              echo "AUTO_TERMINATE_EC2=false; keeping instance running (pipeline finished: $reason)."
+              return 0
+            fi
+            echo "Pipeline finished: $reason"
+            echo "Terminating EC2 instance $INSTANCE_ID..."
+            aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
+            aws ec2 wait instance-terminated --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
+            echo "Instance terminated."
+          }
+
+          for i in $(seq 1 960); do
+            if NEW_LOG=$(_fetch_log_tail "$LAST_LOG_BYTES"); then
+              if [ -n "$NEW_LOG" ]; then
+                echo "--- deploy log (new) ---"
+                printf '%s' "$NEW_LOG"
+                echo
+                LAST_LOG_BYTES=$((LAST_LOG_BYTES + ${#NEW_LOG}))
+              fi
+            fi
+
+            RAW=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+              --region "$AWS_REGION" --output json 2>/dev/null || echo '{"Status":"Pending"}')
+            STATUS=$(echo "$RAW" | jq -r '.Status // "Pending"')
+
+            if [[ "$STATUS" =~ ^(Success|Failed|Cancelled|TimedOut|Cancelling)$ ]]; then
+              if NEW_LOG=$(_fetch_log_tail "$LAST_LOG_BYTES"); then
+                if [ -n "$NEW_LOG" ]; then
+                  echo "--- deploy log (final) ---"
+                  printf '%s' "$NEW_LOG"
+                  echo
+                fi
+              fi
+              case "$STATUS" in
+                Success)
+                  echo "Deploy completed successfully"
+                  echo "=== SSM stdout (last 50 lines) ==="
+                  aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --region "$AWS_REGION" --query 'StandardOutputContent' --output text 2>/dev/null | tail -50
+                  echo "=== SSM stderr (last 50 lines) ==="
+                  aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --region "$AWS_REGION" --query 'StandardErrorContent' --output text 2>/dev/null | tail -50
+                  _terminate_ec2 "$STATUS"
+                  exit 0
+                  ;;
+                *)
+                  echo "Deploy finished with status: $STATUS"
+                  echo "=== SSM stdout (last 80 lines) ==="
+                  aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --region "$AWS_REGION" --query 'StandardOutputContent' --output text 2>/dev/null | tail -80
+                  echo "=== SSM stderr (last 80 lines) ==="
+                  aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --region "$AWS_REGION" --query 'StandardErrorContent' --output text 2>/dev/null | tail -80
+                  _terminate_ec2 "$STATUS"
+                  exit 1
+                  ;;
+              esac
+            fi
+            [ $((i % 4)) -eq 0 ] && echo "Status: $STATUS ($((i*15))s)"
+            sleep 15
+          done
+          echo "Timeout waiting for deploy"
+          echo "=== SSM stdout (last 80 lines) ==="
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --region "$AWS_REGION" --query 'StandardOutputContent' --output text 2>/dev/null | tail -80 || true
+          echo "=== SSM stderr (last 80 lines) ==="
+          aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --region "$AWS_REGION" --query 'StandardErrorContent' --output text 2>/dev/null | tail -80 || true
+          _terminate_ec2 "Timeout"
+          exit 1
