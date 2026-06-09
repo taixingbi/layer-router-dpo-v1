@@ -14,7 +14,7 @@
 | `app/tests/` | Pytest (CPU-only; no GPU) |
 | `data/dpo/`, `data/sft/` | Cached JSONL per method (from fetch or train) |
 | `data/golden-test/` | Gold CSV inputs |
-| `data/result/` | Golden eval outputs (`<ROUTER_MODEL>/` per adapter) |
+| `data/result/` | Golden eval outputs (`<ROUTER_MODEL>/` per adapter; committed) |
 | `data/output/dpo`, `data/output/sft` | Committed training JSONL |
 | `checkpoints/` | Training output (gitignored) |
 | `deploy/` | EC2 GPU bootstrap (`remote-deploy.sh`, `requirements-gpu.txt`) |
@@ -65,7 +65,7 @@ ROUTER_MODEL=router-qwen2.5-7b-sft-v1.00 \
   python -m app.eval
 ```
 
-**Progress** (stderr) — prints `result dir: …`, one line per gold file, then match-rate table on stdout. Generated results are gitignored under `data/.gitignore`.
+**Progress** (stderr) — prints `result dir: …`, one line per gold file, then match-rate table on stdout. Commit `data/result/<ROUTER_MODEL>/` after eval to track match rates in git.
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
