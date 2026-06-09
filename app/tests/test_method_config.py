@@ -1,10 +1,10 @@
-"""Tests for app/method_config.py."""
+"""Tests for app/train/method_config.py."""
 
 from __future__ import annotations
 
 import pytest
 
-from app.method_config import (
+from app.train.method_config import (
     DATASET_SUBDIR,
     base_model_to_slug,
     dataset_subdir,
@@ -20,10 +20,10 @@ def test_normalize_method_defaults_to_dpo():
 
 
 def test_dataset_subdirs():
-    assert DATASET_SUBDIR["dpo"] == "aval/dpo-router/output"
-    assert DATASET_SUBDIR["sft"] == "aval/sft-router/output"
-    assert dataset_subdir("dpo") == "aval/dpo-router/output"
-    assert dataset_subdir("sft") == "aval/sft-router/output"
+    assert DATASET_SUBDIR["dpo"] == "data/output/dpo"
+    assert DATASET_SUBDIR["sft"] == "data/output/sft"
+    assert dataset_subdir("dpo") == "data/output/dpo"
+    assert dataset_subdir("sft") == "data/output/sft"
 
 
 def test_local_data_dir_per_method():

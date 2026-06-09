@@ -27,15 +27,18 @@ dependencies = [
 dev = ["pytest>=8.0"]
 
 [project.scripts]
-layer-router-train = "app.main:main"
-layer-router-dpo = "app.main:main"
-train-dpo = "app.train_dpo:main"
-train-sft = "app.train_sft:main"
-export-merge = "app.export_merge:main"
+layer-router-train = "app.train.main:main"
+layer-router-dpo = "app.train.main:main"
+train-dpo = "app.train.train_dpo:main"
+train-sft = "app.train.train_sft:main"
+export-merge = "app.train.export_merge:main"
+router-eval = "app.eval.cli:main"
+router-build = "app.build.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+exclude = ["app.tests*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["app/tests"]

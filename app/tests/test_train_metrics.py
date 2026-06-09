@@ -1,10 +1,10 @@
-"""Tests for app/train_metrics.py."""
+"""Tests for app/train/train_metrics.py."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.train_metrics import collect_train_timings, log_timings_banner, readme_timing_section
+from app.train.train_metrics import collect_train_timings, log_timings_banner, readme_timing_section
 
 
 def test_collect_train_timings():

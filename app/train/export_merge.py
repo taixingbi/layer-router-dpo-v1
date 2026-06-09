@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from typing import Optional, Sequence
 
-from app.env import load_dotenv
+from app.train.env import load_dotenv
 
 
 def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:

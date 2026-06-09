@@ -6,14 +6,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from app.fetch_dataset import ensure_dataset
-from app.load_jsonl import load_jsonl
-from app.method_config import (
+from app.train.fetch_dataset import ensure_dataset
+from app.train.load_jsonl import load_jsonl
+from app.train.method_config import (
     METHODS,
     default_output_dir,
     local_data_dir,
     normalize_method,
-    orch_sibling_path,
+    dataset_output_path,
 )
 
 _DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
@@ -49,12 +49,12 @@ def resolve_dataset_paths(args: argparse.Namespace) -> None:
     if args.train_jsonl.is_file():
         return
 
-    orch_train = (orch_sibling_path(method) / "train.jsonl").resolve()
-    if orch_train.is_file():
-        print(f"using orchestrator dataset: {orch_train.parent}", file=sys.stderr)
-        args.train_jsonl = orch_train
-        orch_val = (orch_sibling_path(method) / "val.jsonl").resolve()
-        args.val_jsonl = orch_val if orch_val.is_file() else None
+    local_train = (dataset_output_path(method) / "train.jsonl").resolve()
+    if local_train.is_file():
+        print(f"using built dataset: {local_train.parent}", file=sys.stderr)
+        args.train_jsonl = local_train
+        local_val = (dataset_output_path(method) / "val.jsonl").resolve()
+        args.val_jsonl = local_val if local_val.is_file() else None
         return
 
     if args.train_jsonl == default_train or data_dir.resolve() in args.train_jsonl.parents:
@@ -91,9 +91,9 @@ def run_training(args: argparse.Namespace) -> int:
     prepare_training(args)
     print(f"train: starting {method.upper()}", file=sys.stderr)
     if method == "sft":
-        from app.train_sft import run as train_run
+        from app.train.train_sft import run as train_run
     else:
-        from app.train_dpo import run as train_run
+        from app.train.train_dpo import run as train_run
     return train_run(args)
 
 

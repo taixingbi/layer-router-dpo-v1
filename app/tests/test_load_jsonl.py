@@ -1,4 +1,4 @@
-"""CPU-only tests for app/load_jsonl.py (no GPU / no HF download)."""
+"""CPU-only tests for app/train/load_jsonl.py (no GPU / no HF download)."""
 
 from __future__ import annotations
 
@@ -7,11 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from app import load_jsonl as lj
+from app.train import load_jsonl as lj
 
 APP_ROOT = Path(__file__).resolve().parents[1]
-ORCH_DPO = APP_ROOT.parent / "layer-orchestrator-v1" / "aval" / "dpo-router"
-ORCH_SFT = APP_ROOT.parent / "layer-orchestrator-v1" / "aval" / "sft-router"
+from app.build.paths import DPO_OUTPUT_DIR, SFT_OUTPUT_DIR
+
+ROUTER_EVAL_DPO = DPO_OUTPUT_DIR
+ROUTER_EVAL_SFT = SFT_OUTPUT_DIR
 
 SAMPLE_RECORD = {
     "prompt": [
@@ -126,32 +128,32 @@ def test_load_sft_dataset_from_output(tmp_path):
 
 
 @pytest.mark.skipif(
-    not (ORCH_DPO / "output" / "train.jsonl").is_file(),
-    reason="run layer-orchestrator-v1 aval/dpo-router build first",
+    not (ROUTER_EVAL_DPO / "train.jsonl").is_file(),
+    reason="run python -m app.build dpo first",
 )
 def test_load_production_dpo_jsonl():
-    """Smoke-test real orchestrator DPO JSONL when the sibling repo is present."""
+    """Smoke-test real DPO JSONL when data/output is present."""
     from transformers import AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", trust_remote_code=True)
-    train_path = ORCH_DPO / "output" / "train.jsonl"
-    val_path = ORCH_DPO / "output" / "val.jsonl"
+    train_path = ROUTER_EVAL_DPO / "train.jsonl"
+    val_path = ROUTER_EVAL_DPO / "val.jsonl"
     train_rows, val_rows = lj.load_dpo_dataset(train_path, val_path, tokenizer=tok)
     assert len(train_rows) >= 10
     assert val_rows is None or len(val_rows) >= 1
 
 
 @pytest.mark.skipif(
-    not (ORCH_SFT / "output" / "train.jsonl").is_file(),
-    reason="run layer-orchestrator-v1 aval/sft-router build first",
+    not (ROUTER_EVAL_SFT / "train.jsonl").is_file(),
+    reason="run python -m app.build sft first",
 )
 def test_load_production_sft_jsonl():
-    """Smoke-test real orchestrator SFT JSONL when the sibling repo is present."""
+    """Smoke-test real SFT JSONL when data/output is present."""
     from transformers import AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", trust_remote_code=True)
-    train_path = ORCH_SFT / "output" / "train.jsonl"
-    val_path = ORCH_SFT / "output" / "val.jsonl"
+    train_path = ROUTER_EVAL_SFT / "train.jsonl"
+    val_path = ROUTER_EVAL_SFT / "val.jsonl"
     train_rows, val_rows = lj.load_sft_dataset(train_path, val_path, tokenizer=tok)
     assert len(train_rows) >= 10
     assert val_rows is None or len(val_rows) >= 1

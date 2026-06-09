@@ -9,9 +9,9 @@ import sys
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
-from app.env import load_dotenv
-from app.method_config import DEFAULT_BASE_MODEL, local_data_dir, normalize_method
-from app.pipeline import default_output_dir, run_training
+from app.train.env import load_dotenv
+from app.train.method_config import DEFAULT_BASE_MODEL, local_data_dir, normalize_method
+from app.train.pipeline import default_output_dir, run_training
 
 _DEFAULT_MODEL = DEFAULT_BASE_MODEL
 _DEFAULT_MAX_LENGTH = 1024
@@ -155,13 +155,13 @@ def _cmd_train(args: argparse.Namespace) -> int:
 
 def _cmd_merge(args: argparse.Namespace) -> int:
     """Run the merge subcommand."""
-    from app.export_merge import run as merge_run
+    from app.train.export_merge import run as merge_run
 
     return merge_run(args)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    """Entry point for python -m app.main and the layer-router-train console script."""
+    """Entry point for python -m app.train.main and the layer-router-train console script."""
     load_dotenv()
     parser = _build_parser()
     args = parser.parse_args(_normalize_argv(argv))

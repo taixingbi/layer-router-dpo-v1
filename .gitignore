@@ -7,13 +7,16 @@
 .venv/
 .venv-*/
 venv/
+app/build/**/.venv/
+app/eval/**/.venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 *.egg-info/
 
-# training / artifacts
-data/
+# training cache (committed gold + built JSONL live under data/golden-test, data/output)
+data/dpo/
+data/sft/
 checkpoints/
 runs/
 wandb/

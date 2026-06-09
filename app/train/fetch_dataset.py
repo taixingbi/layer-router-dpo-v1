@@ -1,4 +1,4 @@
-"""Download router JSONL from layer-orchestrator-v1 GitHub (DPO or SFT)."""
+"""Download router JSONL from layer-router-train-v1 GitHub (DPO or SFT)."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from app.env import REPO_ROOT
-from app.method_config import dataset_subdir, normalize_method
+from app.train.env import REPO_ROOT
+from app.train.method_config import dataset_subdir, normalize_method
 
 DEFAULT_FILES = ("train.jsonl", "val.jsonl", "build-stats.json")
-DEFAULT_REPO = "taixingbi/layer-orchestrator-v1"
+DEFAULT_REPO = "taixingbi/layer-router-train-v1"
 DEFAULT_REF = "main"
 _USER_AGENT = "layer-router-train-v1"
 

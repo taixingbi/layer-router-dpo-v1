@@ -11,10 +11,10 @@ import time
 from pathlib import Path
 from typing import Optional, Sequence
 
-from app.env import load_dotenv
-from app.load_jsonl import load_sft_dataset
-from app.method_config import local_data_dir, normalize_method
-from app.train_metrics import collect_train_timings, log_timings_banner
+from app.train.env import load_dotenv
+from app.train.load_jsonl import load_sft_dataset
+from app.train.method_config import local_data_dir, normalize_method
+from app.train.train_metrics import collect_train_timings, log_timings_banner
 
 _LORA_TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
@@ -30,7 +30,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     method = normalize_method(os.getenv("TRAIN_METHOD"))
     data_dir = local_data_dir(method)
     p = argparse.ArgumentParser(
-        description="QLoRA SFT train router from layer-orchestrator-v1 aval/sft-router/output/*.jsonl"
+        description="QLoRA SFT train router from data/output/sft/*.jsonl"
     )
     p.add_argument("--method", default=method, choices=("dpo", "sft"))
     p.add_argument(
@@ -72,7 +72,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """Run QLoRA SFT training and write adapter + train_meta.json to output_dir."""
-    from app.pipeline import prepare_training
+    from app.train.pipeline import prepare_training
 
     load_dotenv()
     args = _parse_args(argv)
@@ -188,7 +188,7 @@ def run(args: argparse.Namespace) -> int:
 
     if not args.no_hf_upload and os.getenv("HF_TOKEN"):
         try:
-            from app.hf_upload import upload_checkpoint
+            from app.train.hf_upload import upload_checkpoint
 
             upload_checkpoint(args.output_dir, args.hf_repo_id, method=method)
         except Exception as exc:
