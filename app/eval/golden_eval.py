@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-from app.build.paths import GOLDEN_DATA_DIR, GOLDEN_RESULT_DIR, GOLDEN_TEST_ROOT
+from app.build.paths import GOLDEN_DATA_DIR, GOLDEN_TEST_ROOT, golden_result_dir
 from app.eval.report import generate_report
 
 
@@ -276,7 +276,12 @@ def run_golden_eval(
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Batch router golden-test eval.")
     parser.add_argument("--data-dir", type=Path, default=GOLDEN_DATA_DIR)
-    parser.add_argument("--result-dir", type=Path, default=GOLDEN_RESULT_DIR)
+    parser.add_argument(
+        "--result-dir",
+        type=Path,
+        default=None,
+        help="default: data/result/<ROUTER_MODEL> when set, else data/result",
+    )
     parser.add_argument(
         "--orchestrator-url",
         default=os.getenv("ORCHESTRATOR_URL", "http://192.168.86.179:30184"),
@@ -292,6 +297,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     from app.build.fetch_gold import ensure_gold_data
 
     args.data_dir = ensure_gold_data(args.data_dir)
+    if args.result_dir is None:
+        args.result_dir = golden_result_dir(args.router_model)
+    print(f"result dir: {args.result_dir.resolve()}", file=sys.stderr)
 
     report_path = args.report_path
     if report_path is None:

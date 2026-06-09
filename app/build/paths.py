@@ -9,10 +9,28 @@ TRAIN_REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_ROOT = TRAIN_REPO_ROOT / "data"
 GOLDEN_TEST_ROOT = DATA_ROOT / "golden-test"
 GOLDEN_DATA_DIR = GOLDEN_TEST_ROOT / "data"
-GOLDEN_RESULT_DIR = GOLDEN_TEST_ROOT / "result"
+EVAL_RESULT_ROOT = DATA_ROOT / "result"
+GOLDEN_RESULT_DIR = EVAL_RESULT_ROOT
 OUTPUT_ROOT = DATA_ROOT / "output"
 DPO_OUTPUT_DIR = OUTPUT_ROOT / "dpo"
 SFT_OUTPUT_DIR = OUTPUT_ROOT / "sft"
+
+
+def router_model_slug(router_model: str) -> str:
+    """Filesystem-safe slug from ROUTER_MODEL / --router-model."""
+    return router_model.strip().replace("/", "__").replace(":", "__")
+
+
+def golden_result_dir(router_model: str | None = None) -> Path:
+    """Eval/DPO result dir under data/result/ (per-model subdir when ROUTER_MODEL set)."""
+    model = (router_model or os.environ.get("ROUTER_MODEL", "")).strip()
+    if model:
+        return EVAL_RESULT_ROOT / router_model_slug(model)
+    override = os.environ.get("RESULT_DIR", "").strip()
+    if override:
+        p = Path(override)
+        return p if p.is_absolute() else (TRAIN_REPO_ROOT / p)
+    return EVAL_RESULT_ROOT
 
 
 def dataset_output_dir(method: str) -> Path:

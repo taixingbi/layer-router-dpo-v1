@@ -13,7 +13,8 @@
 | `app/eval/` | Golden batch eval vs orchestrator (`router-eval`) |
 | `app/tests/` | Pytest (CPU-only; no GPU) |
 | `data/dpo/`, `data/sft/` | Cached JSONL per method (from fetch or train) |
-| `data/golden-test/` | Gold CSVs + eval results |
+| `data/golden-test/` | Gold CSV inputs |
+| `data/result/` | Golden eval outputs (`<ROUTER_MODEL>/` per adapter) |
 | `data/output/dpo`, `data/output/sft` | Committed training JSONL |
 | `checkpoints/` | Training output (gitignored) |
 | `deploy/` | EC2 GPU bootstrap (`remote-deploy.sh`, `requirements-gpu.txt`) |
@@ -39,7 +40,7 @@ Build JSONL for the **intent router LLM only** (`run_intent_rewrite_router` in l
 
 ### Golden batch eval
 
-For each row in `data/golden-test/data/**/*.csv`, calls `POST /v1/orchestrator/eval/router`, writes per-suite results under `data/golden-test/result/` (flat basename, e.g. `router_greeting.csv`), then builds `result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`.
+For each row in `data/golden-test/data/**/*.csv`, calls `POST /v1/orchestrator/eval/router`, writes per-suite results under `data/result/` (or `data/result/<ROUTER_MODEL>/`), then builds `router-eval-report-<ROUTER_PROMPT_VERSION>.md`.
 
 **Requirements:** `pip install -e ".[dev]"` (stdlib HTTP; no curl/jq) and a running orchestrator at `ORCHESTRATOR_URL` (default `http://192.168.86.179:30184`).
 
@@ -49,27 +50,27 @@ For each row in `data/golden-test/data/**/*.csv`, calls `POST /v1/orchestrator/e
 | `data/golden-test/data/internal/*.csv` | Internal-intent gold (`greeting`, `identity`, `help`, …) |
 | Header | `question,expected_route` (required). Optional: `conversation_id`, `history` (JSON `{role, content}` array) |
 | Threading | Default `conversation_id` per file: `conv-gold-<basename>`; `X-Session-Id: ses-gold-<basename>` |
-| `result/<name>.csv` | Per input basename: `question`, `expected_route`, `actual_route`, `route_match`, `rewritten_question`, `actual_answer` |
-| `result/router-eval-report-<version>.md` | Summary, match rate, bad items (`route_match` = false) |
+| `data/result/<name>.csv` | Per input basename when no `ROUTER_MODEL` |
+| `data/result/<ROUTER_MODEL>/<name>.csv` | Per-model subdir when scoring a LoRA adapter |
+| `data/result/.../router-eval-report-<version>[-<model>].md` | Summary, match rate, bad items |
 
 ```bash
 python -m app.eval
 
 CONCURRENCY=20 ROUTER_PROMPT_VERSION=router-v2.00 python -m app.eval
 
-# Score a trained LoRA (separate result dir per adapter)
+# Score a trained LoRA — results under data/result/<ROUTER_MODEL>/
 ROUTER_MODEL=router-qwen2.5-7b-sft-v1.00 \
-  python -m app.eval \
-  --result-dir data/golden-test/result/sft-v1.00 \
-  --router-prompt-version router-v2.00
+  ROUTER_PROMPT_VERSION=router-v2.00 \
+  python -m app.eval
 ```
 
-**Progress** (stderr) — one line per gold file, then match-rate table on stdout. Full report: `data/golden-test/result/router-eval-report-<ROUTER_PROMPT_VERSION>.md`. Generated `result/*.csv` and reports are gitignored under `data/golden-test/.gitignore`.
+**Progress** (stderr) — prints `result dir: …`, one line per gold file, then match-rate table on stdout. Generated results are gitignored under `data/.gitignore`.
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `DATA_DIR` | `data/golden-test/data` | Input `*.csv` directory |
-| `RESULT_DIR` | `data/golden-test/result` | Output directory |
+| `RESULT_DIR` | `data/result` | Output when `ROUTER_MODEL` unset; ignored when model is set |
 | `ORCHESTRATOR_URL` | `http://192.168.86.179:30184` | Orchestrator base URL |
 | `CONCURRENCY` | `4` | Parallel HTTP requests per file |
 | `ROUTER_PROMPT_VERSION` | `router-v2.00` | `router_prompt_version` on each eval request |
@@ -109,7 +110,7 @@ From repo root (synthetic **rejected** if no eval results):
 python -m app.build dpo
 ```
 
-After golden eval, rebuild so **rejected** comes from real mismatches in `data/golden-test/result/*.csv`:
+After golden eval, rebuild so **rejected** comes from real mismatches in `data/result/<ROUTER_MODEL>/*.csv` (or flat `data/result/*.csv`):
 
 ```bash
 ROUTER_PROMPT_VERSION=router-v2.00 python -m app.eval

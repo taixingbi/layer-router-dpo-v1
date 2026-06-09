@@ -25,7 +25,7 @@ from app.build.gold import (
     write_jsonl,
 )
 from app.build.orch import get_orch
-from app.build.paths import DPO_OUTPUT_DIR, GOLDEN_DATA_DIR, GOLDEN_RESULT_DIR
+from app.build.paths import DPO_OUTPUT_DIR, GOLDEN_DATA_DIR, golden_result_dir
 
 
 def _synthetic_rejected_row(row: GoldRow) -> GoldRow:
@@ -270,7 +270,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     parser = argparse.ArgumentParser(description="Build router DPO JSONL from golden-test CSVs.")
     parser.add_argument("--gold-data-dir", type=Path, default=GOLDEN_DATA_DIR)
-    parser.add_argument("--result-dir", type=Path, default=GOLDEN_RESULT_DIR)
+    parser.add_argument(
+        "--result-dir",
+        type=Path,
+        default=None,
+        help="eval result CSVs (default: golden_result_dir from ROUTER_MODEL)",
+    )
     parser.add_argument("--output-dir", type=Path, default=DPO_OUTPUT_DIR)
     parser.add_argument("--router-prompt-version", default="router-v2.00")
     parser.add_argument("--val-ratio", type=float, default=0.1)
@@ -291,6 +296,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     gold_data_dir = ensure_gold_data(args.gold_data_dir)
 
     system_prompt = load_router_system_prompt(args.router_prompt_version)
+    if args.result_dir is None:
+        args.result_dir = golden_result_dir(os.environ.get("ROUTER_MODEL"))
     result_dir = args.result_dir if args.result_dir.is_dir() else None
 
     train, val, stats = build_dpo_dataset(
