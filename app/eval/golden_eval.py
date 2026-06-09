@@ -280,7 +280,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "--result-dir",
         type=Path,
         default=None,
-        help="default: data/result/<ROUTER_MODEL> when set, else data/result",
+        help="default: data/result/<ROUTER_MODEL> or data/result/base when unset",
     )
     parser.add_argument(
         "--orchestrator-url",

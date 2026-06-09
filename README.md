@@ -50,22 +50,36 @@ For each row in `data/golden-test/data/**/*.csv`, calls `POST /v1/orchestrator/e
 | `data/golden-test/data/internal/*.csv` | Internal-intent gold (`greeting`, `identity`, `help`, …) |
 | Header | `question,expected_route` (required). Optional: `conversation_id`, `history` (JSON `{role, content}` array) |
 | Threading | Default `conversation_id` per file: `conv-gold-<basename>`; `X-Session-Id: ses-gold-<basename>` |
-| `data/result/<name>.csv` | Per input basename when no `ROUTER_MODEL` |
-| `data/result/<ROUTER_MODEL>/<name>.csv` | Per-model subdir when scoring a LoRA adapter |
-| `data/result/.../router-eval-report-<version>[-<model>].md` | Summary, match rate, bad items |
+| `data/result/base/` | Base instruct model (no `ROUTER_MODEL`; orchestrator default `LLM_MODEL`) |
+| `data/result/<ROUTER_MODEL>/` | LoRA adapter under test (SFT or DPO) |
+| `…/router-eval-report-<version>[-<model>].md` | Summary, match rate, bad items |
+
+**Committed snapshots** (see `data/result/`):
+
+| Dir | Model | Method |
+|-----|-------|--------|
+| `base/` | `Qwen/Qwen2.5-7B-Instruct` (no LoRA) | baseline |
+| `router-qwen2.5-7b-sft-v1.00/` | SFT LoRA | supervised fine-tune |
+| `router-qwen2.5-7b-dpo-v1.00/` | DPO LoRA | preference optimization |
 
 ```bash
-python -m app.eval
+# Base model (no LoRA) → data/result/base/
+ROUTER_PROMPT_VERSION=router-v2.00 python -m app.eval
 
 CONCURRENCY=20 ROUTER_PROMPT_VERSION=router-v2.00 python -m app.eval
 
-# Score a trained LoRA — results under data/result/<ROUTER_MODEL>/
+# SFT LoRA → data/result/router-qwen2.5-7b-sft-v1.00/
 ROUTER_MODEL=router-qwen2.5-7b-sft-v1.00 \
+  ROUTER_PROMPT_VERSION=router-v2.00 \
+  python -m app.eval
+
+# DPO LoRA → data/result/router-qwen2.5-7b-dpo-v1.00/
+ROUTER_MODEL=router-qwen2.5-7b-dpo-v1.00 \
   ROUTER_PROMPT_VERSION=router-v2.00 \
   python -m app.eval
 ```
 
-**Progress** (stderr) — prints `result dir: …`, one line per gold file, then match-rate table on stdout. Commit `data/result/<ROUTER_MODEL>/` after eval to track match rates in git.
+**Progress** (stderr) — prints `result dir: …`, one line per gold file, then match-rate table on stdout. Commit `data/result/{base,<ROUTER_MODEL>}/` after eval to track match rates in git.
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
@@ -74,7 +88,8 @@ ROUTER_MODEL=router-qwen2.5-7b-sft-v1.00 \
 | `ORCHESTRATOR_URL` | `http://192.168.86.179:30184` | Orchestrator base URL |
 | `CONCURRENCY` | `4` | Parallel HTTP requests per file |
 | `ROUTER_PROMPT_VERSION` | `router-v2.00` | `router_prompt_version` on each eval request |
-| `ROUTER_MODEL` | _(unset)_ | Optional vLLM model / LoRA id; sent as `router_model` |
+| `ROUTER_MODEL` | _(unset)_ | vLLM LoRA id (e.g. SFT/DPO adapters); unset → base model, results in `data/result/base/` |
+| `BASE_MODEL` | `Qwen/Qwen2.5-1.5B-Instruct` | Training base (Hub slug); eval base uses orchestrator `LLM_MODEL` when `ROUTER_MODEL` unset |
 | `REPORT_PATH` | `…/router-eval-report-<prompt>[-<model>].md` | Markdown report path |
 
 Eval responses include `decision.route_detail` alongside legacy `decision.route`. Optional CSV columns: `expected_route_detail_type`, `expected_tool_name`.

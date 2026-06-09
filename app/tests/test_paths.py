@@ -14,9 +14,9 @@ def test_golden_result_dir_with_model(monkeypatch):
     assert p.parent.parent.name == "data"
 
 
-def test_golden_result_dir_flat(monkeypatch):
+def test_golden_result_dir_base(monkeypatch):
     monkeypatch.delenv("ROUTER_MODEL", raising=False)
     monkeypatch.delenv("RESULT_DIR", raising=False)
     p = golden_result_dir("")
-    assert p.name == "result"
-    assert p.parent.name == "data"
+    assert p.name == "base"
+    assert p.parent.name == "result"

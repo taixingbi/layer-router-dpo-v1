@@ -22,7 +22,7 @@ def router_model_slug(router_model: str) -> str:
 
 
 def golden_result_dir(router_model: str | None = None) -> Path:
-    """Eval/DPO result dir under data/result/ (per-model subdir when ROUTER_MODEL set)."""
+    """Eval/DPO result dir under data/result/ (per ROUTER_MODEL or ``base/`` when unset)."""
     model = (router_model or os.environ.get("ROUTER_MODEL", "")).strip()
     if model:
         return EVAL_RESULT_ROOT / router_model_slug(model)
@@ -30,7 +30,7 @@ def golden_result_dir(router_model: str | None = None) -> Path:
     if override:
         p = Path(override)
         return p if p.is_absolute() else (TRAIN_REPO_ROOT / p)
-    return EVAL_RESULT_ROOT
+    return EVAL_RESULT_ROOT / "base"
 
 
 def dataset_output_dir(method: str) -> Path:
